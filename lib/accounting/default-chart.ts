@@ -58,5 +58,22 @@ export async function ensureDefaultChart(
     update: {},
     select: { id: true },
   });
-  return { groups, openingLedgerId: openingLedger.id };
+  const stockGroupId = groups.get("STOCK_IN_HAND");
+  if (!stockGroupId) throw new Error("Default stock group is not configured");
+  const inventoryLedger = await tx.ledger.upsert({
+    where: { companyId_code: { companyId, code: "STOCK_ON_HAND" } },
+    create: {
+      companyId,
+      groupId: stockGroupId,
+      name: "Stock on Hand",
+      code: "STOCK_ON_HAND",
+      type: "GENERAL",
+      isSystem: true,
+      creationKey: "system:stock-on-hand",
+      creationHash: "system",
+    },
+    update: {},
+    select: { id: true },
+  });
+  return { groups, openingLedgerId: openingLedger.id, inventoryLedgerId: inventoryLedger.id };
 }

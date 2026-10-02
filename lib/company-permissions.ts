@@ -24,6 +24,16 @@ export const COMPANY_PERMISSION_CATALOG = [
   { resource: "ledger-groups", action: "read", label: "View ledger groups" },
   { resource: "ledger-groups", action: "manage", label: "Manage ledger groups" },
   { resource: "vouchers", action: "read", label: "View voucher history and trial balance" },
+  { resource: "inventory", action: "read", label: "View stock items and inventory reports" },
+  { resource: "inventory", action: "create", label: "Create stock items and opening stock" },
+  { resource: "inventory", action: "update", label: "Update stock item settings" },
+  { resource: "stock-groups", action: "read", label: "View stock groups" },
+  { resource: "stock-groups", action: "manage", label: "Manage stock groups" },
+  { resource: "units", action: "read", label: "View units and conversions" },
+  { resource: "units", action: "manage", label: "Manage units and conversions" },
+  { resource: "warehouses", action: "read", label: "View warehouses and godowns" },
+  { resource: "warehouses", action: "manage", label: "Manage warehouses and godowns" },
+  { resource: "inventory-movements", action: "read", label: "View inventory movement history" },
 ] as const;
 
 export const OWNER_PERMISSIONS = COMPANY_PERMISSION_CATALOG.map(

@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { grantPermissionsToRole, OWNER_PERMISSIONS } from "@/lib/company-permissions";
 import { companySchema } from "@/lib/validation/companies";
 import { ensureDefaultChart } from "@/lib/accounting/default-chart";
+import { ensureDefaultInventoryMasters } from "@/lib/inventory/defaults";
 
 export async function GET() {
   try {
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
           include: { roles: { select: { id: true, name: true } } },
         });
         await ensureDefaultChart(tx, created.id);
+        await ensureDefaultInventoryMasters(tx, created.id);
         const roleId = created.roles.find(({ name }) => name === "Owner")?.id;
         const memberRoleId = created.roles.find(({ name }) => name === "Member")?.id;
         if (!roleId) throw new Error("Company owner role was not created");

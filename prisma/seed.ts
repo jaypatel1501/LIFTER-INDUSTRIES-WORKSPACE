@@ -4,6 +4,7 @@ import { loadEnvConfig } from "@next/env";
 import { passwordSchema, emailSchema } from "../lib/validation/auth";
 import { grantPermissionsToRole, OWNER_PERMISSIONS } from "../lib/company-permissions";
 import { ensureDefaultChart } from "../lib/accounting/default-chart";
+import { ensureDefaultInventoryMasters } from "../lib/inventory/defaults";
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
@@ -65,7 +66,10 @@ async function main() {
       update: {},
     });
   }
-  await prisma.$transaction((tx) => ensureDefaultChart(tx, membership!.companyId));
+  await prisma.$transaction(async (tx) => {
+    await ensureDefaultChart(tx, membership!.companyId);
+    await ensureDefaultInventoryMasters(tx, membership!.companyId);
+  });
   console.info(`Development administrator provisioned: ${user.email}`);
 }
 

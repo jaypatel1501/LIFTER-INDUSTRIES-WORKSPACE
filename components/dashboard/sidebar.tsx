@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, FileBarChart2, History, Layers3, LayoutDashboard, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import { Barcode, Building2, Boxes, FileBarChart2, History, Layers3, LayoutDashboard, MapPinned, Ruler, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
 import { getDictionary } from "@/lib/i18n";
 import { useDashboardUiStore } from "@/lib/ui-store";
 import type { Locale } from "@prisma/client";
@@ -23,6 +23,11 @@ const managementLinks: {
   { href: "/dashboard/ledgers", permission: "ledgers:read", english: "Ledgers", hindi: "खाते", Icon: WalletCards },
   { href: "/dashboard/ledger-groups", permission: "ledger-groups:read", english: "Ledger groups", hindi: "खाता समूह", Icon: Layers3 },
   { href: "/dashboard/accounting-reports", permission: "vouchers:read", english: "Accounting reports", hindi: "लेखा रिपोर्ट", Icon: FileBarChart2 },
+  { href: "/dashboard/inventory", permission: "inventory:read", english: "Stock items", hindi: "स्टॉक आइटम", Icon: Boxes },
+  { href: "/dashboard/stock-groups", permission: "stock-groups:read", english: "Stock groups", hindi: "स्टॉक समूह", Icon: Layers3 },
+  { href: "/dashboard/units", permission: "units:read", english: "Units & conversions", hindi: "इकाइयाँ और रूपांतरण", Icon: Ruler },
+  { href: "/dashboard/warehouses", permission: "warehouses:read", english: "Godowns & locations", hindi: "गोदाम और स्थान", Icon: MapPinned },
+  { href: "/dashboard/inventory-reports", permission: "inventory:read", english: "Inventory reports", hindi: "इन्वेंटरी रिपोर्ट", Icon: Barcode },
 ];
 
 export function Sidebar({ locale, permissions }: { locale: Locale; permissions: string[] }) {

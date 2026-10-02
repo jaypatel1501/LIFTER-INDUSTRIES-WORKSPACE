@@ -34,6 +34,17 @@ All APIs use Next.js App Router Route Handlers. JSON responses use `{ success, d
 | `PATCH`, `DELETE` | `/api/accounting/groups/{groupId}` | `ledger-groups:manage` | Edit/delete custom groups; system groups, used groups, and parent groups with children are protected. |
 | `GET` | `/api/accounting/reports/trial-balance` | `vouchers:read` | Paginated debit/credit trial balance derived from posted voucher lines with optional as-of date, group and search filters. |
 | `GET` | `/api/accounting/reports/parties?type=CUSTOMER&page=1&pageSize=50` | `parties:read` | Paginated customer or supplier summary with current/as-of receivable and payable balances and credit terms. |
+| `GET`, `POST` | `/api/inventory/groups` | `stock-groups:read`, `stock-groups:manage` | Searchable company stock-group hierarchy; manage creates groups. Standard groups cannot be changed or removed. |
+| `PATCH`, `DELETE` | `/api/inventory/groups/{groupId}` | `stock-groups:manage` | Update or remove custom groups; groups with items/children are protected. |
+| `GET`, `POST` | `/api/inventory/units` | `units:read`, `units:manage` | List/create company units of measure with supported decimal precision and item-usage counts. |
+| `POST` | `/api/inventory/units/conversions` | `units:manage` | Create a positive, explicit generic conversion factor between two company units. |
+| `GET`, `POST` | `/api/inventory/warehouses` | `warehouses:read`, `warehouses:manage` | List/create company-scoped godowns and nested locations. |
+| `PATCH`, `DELETE` | `/api/inventory/warehouses/{warehouseId}` | `warehouses:manage` | Update hierarchy/address/active status or delete an unused custom location. |
+| `GET`, `POST` | `/api/inventory/items?page=1&pageSize=25&search=...&groupId=...&status=ACTIVE` | `inventory:read`, `inventory:create` | Search and paginate stock masters with HSN/GST, rates, alternate units, barcodes and balances. POST requires `Idempotency-Key`; optional opening movements and their balanced accounting voucher are atomic. |
+| `GET`, `PATCH` | `/api/inventory/items/{itemId}` | `inventory:read`, `inventory:update` | Read item alternate-unit, batch, location-balance details or update tax/rate/stock-level/active settings. |
+| `GET` | `/api/inventory/movements?itemId=...&page=1&pageSize=25` | `inventory-movements:read` | Read-only, company-scoped movement history with optional item, warehouse, batch, type and date filters. Future posting workflows use the transaction-scoped idempotent movement service. |
+| `GET` | `/api/inventory/reports/stock-summary?search=...&lowStock=true` | `inventory:read` | Paginated stock quantities/valuation and reorder-alert summary. |
+| `GET` | `/api/inventory/reports/batch-expiry?before=YYYY-MM-DD&page=1&pageSize=25` | `inventory:read` | Paginated positive batch balances, manufacturing/expiry dates, godown, quantity and value. |
 | `PATCH` | `/api/profile/locale` | Authenticated | Persist English, Hindi or bilingual preference. |
 | `GET`, `POST` | `/api/auth/[...nextauth]` | Auth.js | Auth.js sign-in, session and sign-out handlers. |
 
@@ -45,4 +56,4 @@ Opening entries require an `Idempotency-Key`, use the company's books-beginning 
 
 Invitations require `EMAIL_SERVER`, `EMAIL_FROM`, and a canonical `AUTH_URL` or `NEXT_PUBLIC_APP_URL`. A newly invited account receives a one-time 30-minute password-setup link; existing accounts receive a sign-in link. A delivery failure is returned explicitly, leaves the invitation pending, and can be retried from the user list. Company logos use private Vercel Blob storage and are served only through the authenticated company-scoped logo route.
 
-Sales, purchase, payment, receipt, contra, journal, inventory, GST, payroll and other business-module posting APIs are not included yet. Future posting handlers must extend the voucher/ledger foundation and require an `Idempotency-Key`, RBAC and company checks, one serializable Prisma transaction, immutable posted-document state, and audit records for the document and all related ledger, stock, tax and outstanding updates.
+Sales/purchase voucher posting, payment, receipt, contra, journal, GST filing, payroll and other business-module posting APIs are not included yet. Inventory master creation can post opening stock, but there are no purchase/sales/adjustment/transfer posting screens yet. Future posting handlers must extend the voucher/ledger and inventory-movement foundations and require an `Idempotency-Key`, RBAC and company checks, one serializable Prisma transaction, immutable posted-document state, and audit records for the document and all related ledger, stock, tax and outstanding updates.

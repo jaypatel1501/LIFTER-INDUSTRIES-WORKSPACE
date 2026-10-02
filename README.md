@@ -1,6 +1,6 @@
 # ERP System
 
-Enterprise-oriented Indian business ERP foundation built on Next.js App Router, strict TypeScript, PostgreSQL/Neon and Prisma. The platform includes company administration and accounting masters with auditable opening-balance vouchers and trial-balance reporting; sales, inventory, payroll, manufacturing, POS and GST transaction modules remain future work.
+Enterprise-oriented Indian business ERP foundation built on Next.js App Router, strict TypeScript, PostgreSQL/Neon and Prisma. The platform includes company administration, accounting masters with auditable opening-balance vouchers and trial-balance reporting, and inventory masters with opening-stock posting, company-scoped balances and stock reports. Sales/purchase voucher workflows, payroll, manufacturing, POS and GST filing integrations remain future work.
 
 ## Foundation
 
@@ -9,6 +9,7 @@ Enterprise-oriented Indian business ERP foundation built on Next.js App Router, 
 - Company profile administration (GSTIN/PAN, registered address and contacts, GST state, financial-year settings and private object-storage logo), annual books periods, user invitations and membership activation/suspension.
 - Tenant-scoped customer/supplier masters with GSTIN/PAN, addresses, contact and credit terms; linked party ledgers and bill-wise opening balances posted through immutable, idempotent double-entry vouchers.
 - Standard company-specific ledger-group hierarchy, cash/bank/tax/income/expense/general ledgers, cost-centre and interest flags, transaction history, customer/supplier summaries, and a posted-voucher trial balance.
+- Tenant-scoped stock groups, units/conversions, HSN/SAC and GST/rate/barcode item masters, warehouse/location trees, batch/expiry tracking, opening-stock vouchers, idempotent inventory movements, warehouse/batch balances, reorder summaries and batch-expiry reports.
 - Action-level role/group matrix, user detail views, scoped failed-login/session history with revocation, searchable audit trail, and English/Hindi/bilingual management screens.
 - PostgreSQL schema, foreign keys, constraints, indexes, migrations, Prisma singleton and transaction helper.
 - Audited company creation and authentication events, database-backed rate limits, and idempotency-key hashing.
@@ -48,4 +49,4 @@ npm run build
 
 ## Security boundaries
 
-Every company-owned query must use a verified active membership and include its `companyId`. Enforce action-level access with `requirePermission`; opening-balance posting uses serializable Prisma transactions, idempotency keys, audit events and immutable posted vouchers. Future financial posting modules must extend the same voucher and ledger-line foundation and update their related records atomically. Credentials and integration tokens are server-only environment variables. Production secrets belong in Vercel Project Settings.
+Every company-owned query must use a verified active membership and include its `companyId`. Enforce action-level access with `requirePermission`; opening-balance and opening-stock posting use serializable Prisma transactions, idempotency keys, audit events and immutable posted vouchers/movements. Future financial posting modules must extend the same voucher, ledger-line and inventory-movement foundations and update their related records atomically. Credentials and integration tokens are server-only environment variables. Production secrets belong in Vercel Project Settings.

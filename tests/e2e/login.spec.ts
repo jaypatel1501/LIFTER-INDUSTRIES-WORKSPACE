@@ -31,6 +31,12 @@ test("company management pages require an authenticated session", async ({ page 
     "/dashboard/ledgers",
     "/dashboard/ledger-groups",
     "/dashboard/accounting-reports",
+    "/dashboard/inventory",
+    "/dashboard/inventory/item-test",
+    "/dashboard/stock-groups",
+    "/dashboard/units",
+    "/dashboard/warehouses",
+    "/dashboard/inventory-reports",
   ]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login$/);

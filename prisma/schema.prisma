@@ -67,6 +67,26 @@ enum VoucherStatus {
   CANCELLED
 }
 
+enum InventoryMovementType {
+  OPENING
+  PURCHASE
+  SALES
+  SALES_RETURN
+  PURCHASE_RETURN
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  PRODUCTION_IN
+  PRODUCTION_OUT
+  JOB_WORK_IN
+  JOB_WORK_OUT
+}
+
+enum InventoryDirection {
+  IN
+  OUT
+}
+
 model User {
   id                 String               @id @default(cuid())
   email              String               @unique
@@ -88,15 +108,16 @@ model User {
   loginHistory       LoginHistory[]
   authSessions       AuthSession[]
   accountingVouchers AccountingVoucher[]  @relation("VoucherCreator")
+  inventoryMovements InventoryMovement[]  @relation("InventoryMovementCreator")
 
   @@index([mobile])
 }
 
 model Company {
-  id                      String              @id @default(cuid())
+  id                      String               @id @default(cuid())
   name                    String
   legalName               String?
-  gstin                   String?             @unique
+  gstin                   String?              @unique
   pan                     String?
   addressLine1            String?
   addressLine2            String?
@@ -104,17 +125,17 @@ model Company {
   state                   String?
   stateCode               String?
   postalCode              String?
-  country                 String              @default("India")
+  country                 String               @default("India")
   email                   String?
   phone                   String?
   website                 String?
   logoUrl                 String?
-  booksBeginningDate      DateTime?           @db.Date
-  financialYearStartMonth Int                 @default(4)
-  timezone                String              @default("Asia/Kolkata")
-  currency                String              @default("INR")
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
+  booksBeginningDate      DateTime?            @db.Date
+  financialYearStartMonth Int                  @default(4)
+  timezone                String               @default("Asia/Kolkata")
+  currency                String               @default("INR")
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
   memberships             Membership[]
   roles                   Role[]
   financialYears          FinancialYear[]
@@ -124,6 +145,15 @@ model Company {
   ledgerGroups            LedgerGroup[]
   ledgers                 Ledger[]
   accountingVouchers      AccountingVoucher[]
+  stockGroups             StockGroup[]
+  units                   UnitOfMeasure[]
+  unitConversions         UnitConversion[]
+  stockItems              StockItem[]
+  warehouses              Warehouse[]
+  batches                 InventoryBatch[]
+  stockBalances           StockBalance[]
+  inventoryMovements      InventoryMovement[]
+  itemConversions         ItemUnitConversion[]
 
   @@index([name])
   @@index([pan])
@@ -237,20 +267,21 @@ model Ledger {
 }
 
 model AccountingVoucher {
-  id             String        @id @default(cuid())
-  companyId      String
-  voucherNumber  String
-  type           VoucherType
-  status         VoucherStatus @default(POSTED)
-  voucherDate    DateTime      @db.Date
-  narration      String?
-  idempotencyKey String
-  requestHash    String
-  createdById    String?
-  createdAt      DateTime      @default(now())
-  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  createdBy      User?         @relation("VoucherCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  lines          VoucherLine[]
+  id                 String              @id @default(cuid())
+  companyId          String
+  voucherNumber      String
+  type               VoucherType
+  status             VoucherStatus       @default(POSTED)
+  voucherDate        DateTime            @db.Date
+  narration          String?
+  idempotencyKey     String
+  requestHash        String
+  createdById        String?
+  createdAt          DateTime            @default(now())
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy          User?               @relation("VoucherCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  lines              VoucherLine[]
+  inventoryMovements InventoryMovement[]
 
   @@unique([companyId, id])
   @@unique([companyId, voucherNumber])
@@ -289,6 +320,218 @@ model BillWiseOpening {
 
   @@unique([companyId, voucherLineId, referenceNumber])
   @@index([companyId, dueDate])
+}
+
+model StockGroup {
+  id          String       @id @default(cuid())
+  companyId   String
+  parentId    String?
+  name        String
+  code        String
+  description String?
+  isSystem    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent      StockGroup?  @relation("StockGroupTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children    StockGroup[] @relation("StockGroupTree")
+  items       StockItem[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId])
+}
+
+model UnitOfMeasure {
+  id              String               @id @default(cuid())
+  companyId       String
+  name            String
+  symbol          String
+  precision       Int                  @default(3)
+  isSystem        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversions     UnitConversion[]     @relation("UnitConversionFrom")
+  convertedTo     UnitConversion[]     @relation("UnitConversionTo")
+  itemBaseUnits   StockItem[]          @relation("ItemBaseUnit")
+  itemConversions ItemUnitConversion[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, symbol])
+  @@index([companyId, name])
+}
+
+model UnitConversion {
+  id         String        @id @default(cuid())
+  companyId  String
+  fromUnitId String
+  toUnitId   String
+  factor     Decimal       @db.Decimal(18, 8)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromUnit   UnitOfMeasure @relation("UnitConversionFrom", fields: [companyId, fromUnitId], references: [companyId, id], onDelete: Restrict)
+  toUnit     UnitOfMeasure @relation("UnitConversionTo", fields: [companyId, toUnitId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, fromUnitId, toUnitId])
+  @@index([companyId, toUnitId])
+}
+
+model ItemUnitConversion {
+  id           String        @id @default(cuid())
+  companyId    String
+  itemId       String
+  unitId       String
+  baseQuantity Decimal       @db.Decimal(18, 8)
+  barcode      String?
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item         StockItem     @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Cascade)
+  unit         UnitOfMeasure @relation(fields: [companyId, unitId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, itemId, unitId])
+  @@unique([companyId, barcode])
+  @@index([companyId, unitId])
+}
+
+model Warehouse {
+  id        String              @id @default(cuid())
+  companyId String
+  parentId  String?
+  name      String
+  code      String
+  address   String?
+  isSystem  Boolean             @default(false)
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  company   Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    Warehouse?          @relation("WarehouseTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children  Warehouse[]         @relation("WarehouseTree")
+  balances  StockBalance[]
+  movements InventoryMovement[]
+  batches   InventoryBatch[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId, isActive])
+}
+
+model StockItem {
+  id             String               @id @default(cuid())
+  companyId      String
+  groupId        String
+  baseUnitId     String
+  name           String
+  code           String?
+  hsnSac         String?
+  gstRate        Decimal              @default(0) @db.Decimal(5, 2)
+  purchaseRate   Decimal              @default(0) @db.Decimal(18, 4)
+  salesRate      Decimal              @default(0) @db.Decimal(18, 4)
+  mrp            Decimal?             @db.Decimal(18, 4)
+  reorderLevel   Decimal              @default(0) @db.Decimal(18, 6)
+  minimumLevel   Decimal              @default(0) @db.Decimal(18, 6)
+  maximumLevel   Decimal?             @db.Decimal(18, 6)
+  batchTracked   Boolean              @default(false)
+  barcode        String?
+  isActive       Boolean              @default(true)
+  creationKey    String
+  creationHash   String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  company        Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group          StockGroup           @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
+  baseUnit       UnitOfMeasure        @relation("ItemBaseUnit", fields: [companyId, baseUnitId], references: [companyId, id], onDelete: Restrict)
+  alternateUnits ItemUnitConversion[]
+  batches        InventoryBatch[]
+  balances       StockBalance[]
+  movements      InventoryMovement[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@unique([companyId, barcode])
+  @@unique([companyId, creationKey])
+  @@index([companyId, groupId, isActive, name])
+  @@index([companyId, baseUnitId])
+  @@index([companyId, hsnSac])
+  @@index([companyId, batchTracked, isActive])
+}
+
+model InventoryBatch {
+  id                String              @id @default(cuid())
+  companyId         String
+  itemId            String
+  warehouseId       String
+  batchNumber       String
+  manufacturingDate DateTime?           @db.Date
+  expiryDate        DateTime?           @db.Date
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item              StockItem           @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse           @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  balances          StockBalance[]
+  movements         InventoryMovement[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, itemId, warehouseId, batchNumber])
+  @@index([companyId, itemId, expiryDate])
+  @@index([companyId, warehouseId, expiryDate])
+}
+
+model StockBalance {
+  id          String          @id @default(cuid())
+  companyId   String
+  itemId      String
+  warehouseId String
+  batchId     String?
+  locationKey String
+  quantity    Decimal         @default(0) @db.Decimal(18, 6)
+  value       Decimal         @default(0) @db.Decimal(18, 4)
+  updatedAt   DateTime        @updatedAt
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item        StockItem       @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse   Warehouse       @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  batch       InventoryBatch? @relation(fields: [companyId, batchId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, itemId, warehouseId, locationKey])
+  @@index([companyId, warehouseId, itemId])
+  @@index([companyId, itemId, quantity])
+}
+
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  companyId      String
+  itemId         String
+  warehouseId    String
+  batchId        String?
+  voucherId      String?
+  movementType   InventoryMovementType
+  direction      InventoryDirection
+  quantity       Decimal               @db.Decimal(18, 6)
+  unitCost       Decimal               @db.Decimal(18, 4)
+  value          Decimal               @db.Decimal(18, 4)
+  movementDate   DateTime              @db.Date
+  idempotencyKey String
+  requestHash    String
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  item           StockItem             @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse      Warehouse             @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  batch          InventoryBatch?       @relation(fields: [companyId, batchId], references: [companyId, id], onDelete: Restrict)
+  voucher        AccountingVoucher?    @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  createdBy      User?                 @relation("InventoryMovementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, itemId, movementDate, id])
+  @@index([companyId, warehouseId, movementDate])
+  @@index([companyId, batchId, movementDate])
+  @@index([companyId, voucherId])
 }
 
 model Membership {

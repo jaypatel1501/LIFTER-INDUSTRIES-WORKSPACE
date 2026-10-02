@@ -10,6 +10,10 @@ The company-management migration adds the financial-year table and its company f
 
 New companies receive the same standard account-group tree and opening-balance offset ledger in the company-creation transaction. Opening-balance vouchers and their bill details are created atomically with the party/ledger master; posted voucher lines are the source for ledger history and trial-balance reports.
 
+The inventory migration adds company-scoped stock groups, units and conversions, items, warehouse trees, batches, per-location/batch balances and immutable stock movements. It adds composite company-aware foreign keys, decimal/date/stock-level checks, idempotency and lookup indexes, and the inventory permission catalog. Existing companies receive standard stock groups, common units and conversions, a main godown, and a Stock on Hand ledger. New company creation and development seeding provision the same defaults. Opening stock is posted as audited inventory movements and a balanced opening voucher in the same serializable transaction; use the shared movement service for future purchase, sales, transfer and production integrations.
+
+Inventory tests include database-gated coverage for idempotent opening stock, stock value/balance, balanced voucher lines and cross-company isolation. Run with `RUN_DB_TESTS=1` against a migrated test database; ordinary unit tests do not require PostgreSQL.
+
 All API reads and writes must verify an active company membership. Use `requireCompanyContext` for tenant context and `requirePermission(resource, action)` for action checks. Always include `companyId` in subsequent tenant queries. Use transactions for multi-record writes and add audit entries in the same transaction.
 
 ## Local workflow
