@@ -900,12 +900,13 @@ export async function reversePostedVoucher(
   rawIdempotencyKey: string | null,
   reason: string,
   requestInfo: RequestInfo,
+  transaction?: Prisma.TransactionClient,
 ) {
   if (!rawIdempotencyKey) throw new ValidationError("Idempotency-Key header is required");
   if (!reason.trim()) throw new ValidationError("A reason is required to reverse a posted voucher");
   const key = hashIdempotencyKey(rawIdempotencyKey);
   const hash = requestHash({ voucherId, reversalDate, reason });
-  return withTransaction(async (tx) => {
+  const operation = async (tx: Prisma.TransactionClient) => {
     const prior = await tx.accountingVoucher.findUnique({
       where: { companyId_idempotencyKey: { companyId: context.companyId, idempotencyKey: key } },
     });
@@ -1072,7 +1073,8 @@ export async function reversePostedVoucher(
       requestInfo,
     );
     return { voucher: reversal, replayed: false };
-  });
+  };
+  return transaction ? operation(transaction) : withTransaction(operation);
 }
 
 export { VoucherStatus, VoucherApprovalStatus };

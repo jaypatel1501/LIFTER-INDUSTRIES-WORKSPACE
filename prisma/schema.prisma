@@ -79,6 +79,7 @@ enum VoucherApprovalStatus {
 enum VoucherTaxType {
   CGST
   SGST
+  UTGST
   IGST
   CESS
   TDS
@@ -134,34 +135,82 @@ enum InventoryDirection {
   OUT
 }
 
+enum SalesDocumentType {
+  QUOTATION
+  SALES_ORDER
+  DELIVERY_NOTE
+  SALES_INVOICE
+}
+
+enum SalesDocumentStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  REJECTED
+  PARTIALLY_DELIVERED
+  DELIVERED
+  PARTIALLY_INVOICED
+  INVOICED
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum SalesPaymentMode {
+  CASH
+  CREDIT
+}
+
+enum SalesInvoiceNature {
+  GOODS
+  SERVICE
+}
+
+enum SalesDocumentEventType {
+  CREATED
+  ISSUED
+  ACCEPTED
+  REJECTED
+  ORDER_CREATED
+  DELIVERY_POSTED
+  INVOICE_POSTED
+  CANCELLED
+  REVERSED
+  EMAIL_SENT
+  WHATSAPP_SENT
+}
+
 model User {
-  id                 String                  @id @default(cuid())
-  email              String                  @unique
-  normalizedEmail    String                  @unique
-  name               String?
-  mobile             String?                 @unique
-  passwordHash       String
-  locale             Locale                  @default(EN)
-  emailVerifiedAt    DateTime?
-  failedLoginCount   Int                     @default(0)
-  lockedUntil        DateTime?
-  sessionVersion     Int                     @default(0)
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  memberships        Membership[]
-  resetTokens        PasswordResetToken[]
-  otpChallenges      OtpChallenge[]
-  auditLogs          AuditLog[]              @relation("AuditActor")
-  loginHistory       LoginHistory[]
-  authSessions       AuthSession[]
-  accountingVouchers AccountingVoucher[]     @relation("VoucherCreator")
-  postedVouchers     AccountingVoucher[]     @relation("VoucherPoster")
-  cancelledVouchers  AccountingVoucher[]     @relation("VoucherCanceller")
-  inventoryMovements InventoryMovement[]     @relation("InventoryMovementCreator")
-  voucherApprovals   VoucherApprovalAction[] @relation("VoucherApprovalActor")
-  voucherAuditEvents VoucherAuditEvent[]     @relation("VoucherAuditActor")
-  dayBookEvents      DayBookEntry[]          @relation("DayBookActor")
-  voucherAttachments VoucherAttachment[]     @relation("VoucherAttachmentCreator")
+  id                    String                  @id @default(cuid())
+  email                 String                  @unique
+  normalizedEmail       String                  @unique
+  name                  String?
+  mobile                String?                 @unique
+  passwordHash          String
+  locale                Locale                  @default(EN)
+  emailVerifiedAt       DateTime?
+  failedLoginCount      Int                     @default(0)
+  lockedUntil           DateTime?
+  sessionVersion        Int                     @default(0)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  memberships           Membership[]
+  resetTokens           PasswordResetToken[]
+  otpChallenges         OtpChallenge[]
+  auditLogs             AuditLog[]              @relation("AuditActor")
+  loginHistory          LoginHistory[]
+  authSessions          AuthSession[]
+  accountingVouchers    AccountingVoucher[]     @relation("VoucherCreator")
+  postedVouchers        AccountingVoucher[]     @relation("VoucherPoster")
+  cancelledVouchers     AccountingVoucher[]     @relation("VoucherCanceller")
+  inventoryMovements    InventoryMovement[]     @relation("InventoryMovementCreator")
+  voucherApprovals      VoucherApprovalAction[] @relation("VoucherApprovalActor")
+  voucherAuditEvents    VoucherAuditEvent[]     @relation("VoucherAuditActor")
+  dayBookEvents         DayBookEntry[]          @relation("DayBookActor")
+  voucherAttachments    VoucherAttachment[]     @relation("VoucherAttachmentCreator")
+  salesDocumentsCreated SalesDocument[]         @relation("SalesDocumentCreator")
+  salesDocumentsIssued  SalesDocument[]         @relation("SalesDocumentIssuer")
+  salesDocumentEvents   SalesDocumentEvent[]    @relation("SalesDocumentEventActor")
 
   @@index([mobile])
 }
@@ -217,6 +266,10 @@ model Company {
   inventoryMovements      InventoryMovement[]
   itemConversions         ItemUnitConversion[]
   CostAllocation          CostAllocation[]
+  salesNumberSeries       SalesNumberSeries[]
+  salesDocuments          SalesDocument[]
+  salesDocumentLines      SalesDocumentLine[]
+  salesDocumentEvents     SalesDocumentEvent[]
 
   @@index([name])
   @@index([pan])
@@ -244,7 +297,7 @@ model FinancialYear {
 }
 
 model Party {
-  id               String    @id @default(cuid())
+  id               String          @id @default(cuid())
   companyId        String
   type             PartyType
   name             String
@@ -260,16 +313,17 @@ model Party {
   state            String?
   stateCode        String?
   postalCode       String?
-  country          String    @default("India")
-  creditPeriodDays Int       @default(0)
-  creditLimit      Decimal   @default(0) @db.Decimal(18, 2)
-  isActive         Boolean   @default(true)
+  country          String          @default("India")
+  creditPeriodDays Int             @default(0)
+  creditLimit      Decimal         @default(0) @db.Decimal(18, 2)
+  isActive         Boolean         @default(true)
   creationKey      String
   creationHash     String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledger           Ledger?
+  salesDocuments   SalesDocument[]
 
   @@unique([companyId, id])
   @@unique([companyId, creationKey])
@@ -302,29 +356,30 @@ model LedgerGroup {
 }
 
 model Ledger {
-  id                String              @id @default(cuid())
-  companyId         String
-  groupId           String
-  partyId           String?
-  name              String
-  code              String?
-  type              LedgerType          @default(GENERAL)
-  isSystem          Boolean             @default(false)
-  costCentreEnabled Boolean             @default(false)
-  interestEnabled   Boolean             @default(false)
-  interestRate      Decimal?            @db.Decimal(7, 4)
-  isActive          Boolean             @default(true)
-  creationKey       String
-  creationHash      String
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  group             LedgerGroup         @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
-  party             Party?              @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
-  voucherLines      VoucherLine[]
-  transactions      LedgerTransaction[]
-  taxTransactions   TaxTransaction[]
-  voucherTaxDetails VoucherTaxDetail[]
+  id                    String              @id @default(cuid())
+  companyId             String
+  groupId               String
+  partyId               String?
+  name                  String
+  code                  String?
+  type                  LedgerType          @default(GENERAL)
+  isSystem              Boolean             @default(false)
+  costCentreEnabled     Boolean             @default(false)
+  interestEnabled       Boolean             @default(false)
+  interestRate          Decimal?            @db.Decimal(7, 4)
+  isActive              Boolean             @default(true)
+  creationKey           String
+  creationHash          String
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  company               Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group                 LedgerGroup         @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
+  party                 Party?              @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  voucherLines          VoucherLine[]
+  transactions          LedgerTransaction[]
+  taxTransactions       TaxTransaction[]
+  voucherTaxDetails     VoucherTaxDetail[]
+  salesPaymentDocuments SalesDocument[]     @relation("SalesPaymentLedger")
 
   @@unique([companyId, id])
   @@unique([companyId, name])
@@ -399,6 +454,7 @@ model AccountingVoucher {
   approvals            VoucherApprovalAction[]
   auditEvents          VoucherAuditEvent[]
   dayBookEntries       DayBookEntry[]
+  salesDocuments       SalesDocument[]
   reversalOf           AccountingVoucher?      @relation("VoucherReversal", fields: [companyId, reversalOfId], references: [companyId, id], onDelete: Restrict)
   reversals            AccountingVoucher[]     @relation("VoucherReversal")
 
@@ -649,6 +705,160 @@ model DayBookEntry {
   @@index([companyId, eventType, createdAt])
 }
 
+model SalesNumberSeries {
+  id           String            @id @default(cuid())
+  companyId    String
+  documentType SalesDocumentType
+  periodKey    String
+  prefix       String
+  suffix       String            @default("")
+  nextNumber   Int               @default(1)
+  padding      Int               @default(5)
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents    SalesDocument[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentType, periodKey])
+  @@index([companyId, isActive, documentType])
+}
+
+model SalesDocument {
+  id                   String               @id @default(cuid())
+  companyId            String
+  documentNumber       String
+  documentType         SalesDocumentType
+  status               SalesDocumentStatus  @default(DRAFT)
+  partyId              String
+  sourceDocumentId     String?
+  voucherId            String?
+  numberSeriesId       String
+  documentDate         DateTime             @db.Date
+  dueDate              DateTime?            @db.Date
+  validUntil           DateTime?            @db.Date
+  paymentMode          SalesPaymentMode?
+  invoiceNature        SalesInvoiceNature?
+  paymentLedgerId      String?
+  billingAddress       Json
+  shippingAddress      Json
+  companySnapshot      Json
+  partySnapshot        Json
+  notes                String?
+  subtotal             Decimal              @db.Decimal(18, 2)
+  discountAmount       Decimal              @default(0) @db.Decimal(18, 2)
+  freight              Decimal              @default(0) @db.Decimal(18, 2)
+  otherCharges         Decimal              @default(0) @db.Decimal(18, 2)
+  taxableAmount        Decimal              @db.Decimal(18, 2)
+  cgstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  sgstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  utgstAmount          Decimal              @default(0) @db.Decimal(18, 2)
+  igstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  roundOff             Decimal              @default(0) @db.Decimal(18, 2)
+  totalAmount          Decimal              @db.Decimal(18, 2)
+  costOfGoodsSold      Decimal              @default(0) @db.Decimal(18, 2)
+  idempotencyKey       String
+  requestHash          String
+  postIdempotencyKey   String?
+  postRequestHash      String?
+  cancelIdempotencyKey String?
+  cancelRequestHash    String?
+  createdById          String?
+  issuedById           String?
+  issuedAt             DateTime?
+  postedAt             DateTime?
+  cancelledAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  company              Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  party                Party                @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  sourceDocument       SalesDocument?       @relation("SalesDocumentFlow", fields: [companyId, sourceDocumentId], references: [companyId, id], onDelete: Restrict)
+  childDocuments       SalesDocument[]      @relation("SalesDocumentFlow")
+  voucher              AccountingVoucher?   @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  numberSeries         SalesNumberSeries    @relation(fields: [companyId, numberSeriesId], references: [companyId, id], onDelete: Restrict)
+  paymentLedger        Ledger?              @relation("SalesPaymentLedger", fields: [companyId, paymentLedgerId], references: [companyId, id], onDelete: Restrict)
+  createdBy            User?                @relation("SalesDocumentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy             User?                @relation("SalesDocumentIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines                SalesDocumentLine[]
+  events               SalesDocumentEvent[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentNumber])
+  @@unique([companyId, idempotencyKey])
+  @@unique([companyId, voucherId])
+  @@unique([companyId, postIdempotencyKey])
+  @@unique([companyId, cancelIdempotencyKey])
+  @@index([companyId, documentType, status, documentDate])
+  @@index([companyId, partyId, documentDate])
+  @@index([companyId, sourceDocumentId, documentType])
+  @@index([companyId, status, dueDate])
+}
+
+model SalesDocumentLine {
+  id                String              @id @default(cuid())
+  companyId         String
+  documentId        String
+  sourceLineId      String?
+  itemId            String?
+  lineNumber        Int
+  description       String
+  hsnSac            String?
+  unit              String
+  quantity          Decimal             @db.Decimal(18, 6)
+  deliveredQuantity Decimal             @default(0) @db.Decimal(18, 6)
+  invoicedQuantity  Decimal             @default(0) @db.Decimal(18, 6)
+  unitRate          Decimal             @db.Decimal(18, 4)
+  discountPercent   Decimal             @default(0) @db.Decimal(7, 4)
+  discountAmount    Decimal             @default(0) @db.Decimal(18, 2)
+  taxableAmount     Decimal             @db.Decimal(18, 2)
+  gstRate           Decimal             @default(0) @db.Decimal(7, 4)
+  cgstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  sgstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  utgstRate         Decimal             @default(0) @db.Decimal(7, 4)
+  igstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  cgstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  sgstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  utgstAmount       Decimal             @default(0) @db.Decimal(18, 2)
+  igstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  warehouseId       String?
+  batchNumber       String?
+  manufacturingDate DateTime?           @db.Date
+  expiryDate        DateTime?           @db.Date
+  unitCost          Decimal?            @db.Decimal(18, 4)
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document          SalesDocument       @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  item              StockItem?          @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse?          @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  sourceLine        SalesDocumentLine?  @relation("SalesLineFlow", fields: [companyId, sourceLineId], references: [companyId, id], onDelete: Restrict)
+  childLines        SalesDocumentLine[] @relation("SalesLineFlow")
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentId, lineNumber])
+  @@index([companyId, itemId, documentId])
+  @@index([companyId, sourceLineId])
+  @@index([companyId, warehouseId, batchNumber])
+}
+
+model SalesDocumentEvent {
+  id             String                 @id @default(cuid())
+  companyId      String
+  documentId     String
+  actorId        String?
+  eventType      SalesDocumentEventType
+  idempotencyKey String
+  snapshot       Json
+  createdAt      DateTime               @default(now())
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document       SalesDocument          @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  actor          User?                  @relation("SalesDocumentEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, documentId, createdAt])
+  @@index([companyId, eventType, createdAt])
+}
+
 model BillWiseOpening {
   id              String      @id @default(cuid())
   companyId       String
@@ -755,6 +965,7 @@ model Warehouse {
   movements           InventoryMovement[]
   batches             InventoryBatch[]
   voucherStockDetails VoucherStockDetail[]
+  salesDocumentLines  SalesDocumentLine[]
 
   @@unique([companyId, id])
   @@unique([companyId, name])
@@ -792,6 +1003,7 @@ model StockItem {
   balances            StockBalance[]
   movements           InventoryMovement[]
   voucherStockDetails VoucherStockDetail[]
+  salesDocumentLines  SalesDocumentLine[]
 
   @@unique([companyId, id])
   @@unique([companyId, name])

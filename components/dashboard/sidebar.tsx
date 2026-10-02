@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Barcode, Building2, Boxes, FileBarChart2, History, Layers3, LayoutDashboard, MapPinned, ReceiptText, Ruler, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import { Barcode, Building2, Boxes, FileBarChart2, History, Layers3, LayoutDashboard, MapPinned, ReceiptText, Ruler, Settings2, Shield, ShoppingCart, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
 import { getDictionary } from "@/lib/i18n";
 import { useDashboardUiStore } from "@/lib/ui-store";
 import type { Locale } from "@prisma/client";
@@ -20,6 +20,8 @@ const managementLinks: {
   { href: "/dashboard/security", permission: "sessions:read", english: "Login & sessions", hindi: "लॉगिन और सत्र", Icon: History },
   { href: "/dashboard/audit", permission: "audit:read", english: "Audit trail", hindi: "ऑडिट ट्रेल", Icon: History },
   { href: "/dashboard/parties", permission: "parties:read", english: "Customers & suppliers", hindi: "ग्राहक और आपूर्तिकर्ता", Icon: UsersRound },
+  { href: "/dashboard/sales", permission: "sales:read", english: "Sales", hindi: "बिक्री", Icon: ShoppingCart },
+  { href: "/dashboard/sales-reports", permission: "sales-reports:read", english: "Sales reports", hindi: "बिक्री रिपोर्ट", Icon: FileBarChart2 },
   { href: "/dashboard/ledgers", permission: "ledgers:read", english: "Ledgers", hindi: "खाते", Icon: WalletCards },
   { href: "/dashboard/ledger-groups", permission: "ledger-groups:read", english: "Ledger groups", hindi: "खाता समूह", Icon: Layers3 },
   { href: "/dashboard/accounting-reports", permission: "vouchers:read", english: "Accounting reports", hindi: "लेखा रिपोर्ट", Icon: FileBarChart2 },

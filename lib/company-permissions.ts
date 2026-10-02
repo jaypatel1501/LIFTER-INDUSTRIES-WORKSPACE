@@ -42,6 +42,14 @@ export const COMPANY_PERMISSION_CATALOG = [
   { resource: "warehouses", action: "read", label: "View warehouses and godowns" },
   { resource: "warehouses", action: "manage", label: "Manage warehouses and godowns" },
   { resource: "inventory-movements", action: "read", label: "View inventory movement history" },
+  { resource: "sales", action: "read", label: "View quotations and sales documents" },
+  { resource: "sales", action: "create", label: "Create quotations and sales documents" },
+  { resource: "sales", action: "update", label: "Update draft sales documents" },
+  { resource: "sales", action: "issue", label: "Issue quotations and sales orders" },
+  { resource: "sales", action: "post", label: "Post deliveries and sales invoices" },
+  { resource: "sales", action: "cancel", label: "Cancel sales documents" },
+  { resource: "sales", action: "send", label: "Send sales documents to customers" },
+  { resource: "sales-reports", action: "read", label: "View sales registers and profitability reports" },
 ] as const;
 
 export const OWNER_PERMISSIONS = COMPANY_PERMISSION_CATALOG.map(

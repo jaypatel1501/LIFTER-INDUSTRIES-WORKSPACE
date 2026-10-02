@@ -38,6 +38,15 @@ export async function sendCompanyInvitationEmail(
   );
 }
 
+export async function sendSalesDocumentEmail(
+  to: string,
+  subject: string,
+  text: string,
+  html: string,
+) {
+  await sendMail(to, subject, text, html);
+}
+
 async function sendMail(to: string, subject: string, text: string, html: string) {
   const configuration = requireEmailConfiguration();
   const server = new URL(configuration.server);

@@ -42,6 +42,10 @@ test("company management pages require an authenticated session", async ({ page 
     "/dashboard/tax-transactions",
     "/dashboard/voucher-series",
     "/dashboard/cost-centres",
+    "/dashboard/sales",
+    "/dashboard/sales-reports",
+    "/dashboard/sales/sales-test",
+    "/dashboard/sales/sales-test/print",
     "/dashboard/vouchers/voucher-test",
   ]) {
     await page.goto(path);

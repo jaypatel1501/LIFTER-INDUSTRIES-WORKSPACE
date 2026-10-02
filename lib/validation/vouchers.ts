@@ -13,7 +13,7 @@ const text = (maximum: number) => z.string().trim().max(maximum).optional().or(z
 
 const taxSchema = z.object({
   taxLedgerId: z.string().min(1).max(64),
-  taxType: z.enum(["CGST", "SGST", "IGST", "CESS", "TDS", "TCS", "OTHER"]),
+  taxType: z.enum(["CGST", "SGST", "UTGST", "IGST", "CESS", "TDS", "TCS", "OTHER"]),
   taxableAmount: money,
   taxAmount: money,
   rate: z.string().regex(/^\d{1,3}(?:\.\d{1,4})?$/).refine((value) => Number(value) <= 100),
