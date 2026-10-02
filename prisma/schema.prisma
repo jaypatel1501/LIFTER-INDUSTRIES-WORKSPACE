@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -22,6 +22,11 @@ enum MembershipStatus {
 
 enum OtpPurpose {
   LOGIN
+}
+
+enum FinancialYearStatus {
+  OPEN
+  CLOSED
 }
 
 model User {
@@ -49,20 +54,54 @@ model User {
 }
 
 model Company {
-  id          String       @id @default(cuid())
-  name        String
-  legalName   String?
-  gstin       String?      @unique
-  timezone    String       @default("Asia/Kolkata")
-  currency    String       @default("INR")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  memberships Membership[]
-  roles       Role[]
-  auditLogs   AuditLog[]
-  rateLimits  RateLimit[]
+  id                      String          @id @default(cuid())
+  name                    String
+  legalName               String?
+  gstin                   String?         @unique
+  pan                     String?
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  stateCode               String?
+  postalCode              String?
+  country                 String          @default("India")
+  email                   String?
+  phone                   String?
+  website                 String?
+  logoUrl                 String?
+  booksBeginningDate      DateTime?       @db.Date
+  financialYearStartMonth Int             @default(4)
+  timezone                String          @default("Asia/Kolkata")
+  currency                String          @default("INR")
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  memberships             Membership[]
+  roles                   Role[]
+  financialYears          FinancialYear[]
+  auditLogs               AuditLog[]
+  rateLimits              RateLimit[]
 
   @@index([name])
+  @@index([pan])
+  @@index([stateCode])
+}
+
+model FinancialYear {
+  id                 String              @id @default(cuid())
+  companyId          String
+  name               String
+  startDate          DateTime            @db.Date
+  endDate            DateTime            @db.Date
+  booksBeginningDate DateTime            @db.Date
+  status             FinancialYearStatus @default(OPEN)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, startDate])
+  @@index([companyId, status, startDate])
+  @@index([companyId, endDate])
 }
 
 model Membership {
@@ -152,27 +191,27 @@ model AuditLog {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
 }
 
 model OtpChallenge {
-  id        String    @id @default(cuid())
-  userId    String
-  purpose   OtpPurpose
-  codeHash  String
-  expiresAt DateTime
-  attempts  Int       @default(0)
+  id         String     @id @default(cuid())
+  userId     String
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
   consumedAt DateTime?
-  createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, purpose, createdAt])
   @@index([expiresAt])

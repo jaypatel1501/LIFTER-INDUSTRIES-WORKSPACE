@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
+import { grantPermissionsToRole, OWNER_PERMISSIONS } from "@/lib/company-permissions";
 import { companySchema } from "@/lib/validation/companies";
 
 export async function GET() {
@@ -33,15 +34,6 @@ export async function POST(request: Request) {
       const session = await requireSession();
       await enforceRateLimit(rateLimitKey("company-create", session.user.id), 5, 60 * 60_000);
       const input = companySchema.parse(await readJson(request));
-      const permissions = [
-        ["company", "read"],
-        ["company", "update"],
-        ["members", "read"],
-        ["members", "invite"],
-        ["roles", "manage"],
-        ["audit", "read"],
-        ["profile", "manage"],
-      ] as const;
       const company = await prisma.$transaction(async (tx) => {
         const existingDefault = await tx.membership.findFirst({
           where: {
@@ -63,28 +55,20 @@ export async function POST(request: Request) {
               },
             },
             roles: {
-              create: {
-                name: "Owner",
-                description: "Initial company owner role",
-                isSystem: true,
-              },
+              create: [
+                { name: "Owner", description: "Initial company owner role", isSystem: true },
+                { name: "Member", description: "Standard company member", isSystem: true },
+              ],
             },
           },
-          include: { roles: { select: { id: true }, take: 1 } },
+          include: { roles: { select: { id: true, name: true } } },
         });
-        const roleId = created.roles[0]?.id;
+        const roleId = created.roles.find(({ name }) => name === "Owner")?.id;
+        const memberRoleId = created.roles.find(({ name }) => name === "Member")?.id;
         if (!roleId) throw new Error("Company owner role was not created");
-
-        const rolePermissionRows = [];
-        for (const [resource, action] of permissions) {
-          const permission = await tx.permission.upsert({
-            where: { resource_action: { resource, action } },
-            create: { resource, action },
-            update: {},
-          });
-          rolePermissionRows.push({ roleId, permissionId: permission.id });
-        }
-        await tx.rolePermission.createMany({ data: rolePermissionRows });
+        if (!memberRoleId) throw new Error("Company member role was not created");
+        await grantPermissionsToRole(tx, roleId, OWNER_PERMISSIONS);
+        await grantPermissionsToRole(tx, memberRoleId, [["company", "read"]]);
         const membership = await tx.membership.findUniqueOrThrow({
           where: { userId_companyId: { userId: session.user.id, companyId: created.id } },
           select: { id: true },

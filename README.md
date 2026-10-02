@@ -6,6 +6,8 @@ Enterprise-oriented Indian business ERP foundation built on Next.js App Router, 
 
 - Auth.js JWT sessions with bcrypt-backed email/password sign-in, mobile OTP adapter, account lockout, password reset, and session revocation after password reset.
 - Company-scoped membership, company roles, global permission catalog and reusable RBAC/tenant guards.
+- Company profile administration (GSTIN/PAN, registered address and contacts, GST state, financial-year settings and private object-storage logo), annual books periods, user invitations and membership activation/suspension.
+- Action-level role/group matrix, user detail views, scoped failed-login/session history with revocation, searchable audit trail, and English/Hindi/bilingual management screens.
 - PostgreSQL schema, foreign keys, constraints, indexes, migrations, Prisma singleton and transaction helper.
 - Audited company creation and authentication events, database-backed rate limits, and idempotency-key hashing.
 - Protected company dashboard shell, company onboarding/switching, persisted English/Hindi/bilingual preferences.

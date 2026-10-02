@@ -13,6 +13,7 @@ databaseTest("company memberships and audit queries remain tenant-scoped", async
       passwordHash: "not-used-in-this-database-test",
     },
   });
+
   const [companyA, companyB] = await Promise.all([
     prisma.company.create({ data: { name: `Tenant A ${suffix}` } }),
     prisma.company.create({ data: { name: `Tenant B ${suffix}` } }),
@@ -56,5 +57,30 @@ databaseTest("company memberships and audit queries remain tenant-scoped", async
       where: { id: { in: [companyA.id, companyB.id] } },
     });
     await prisma.user.delete({ where: { id: user.id } });
+  }
+});
+
+databaseTest("financial years are isolated by company and constrained to their books dates", async () => {
+  const suffix = randomUUID();
+  const [companyA, companyB] = await Promise.all([
+    prisma.company.create({ data: { name: `Fiscal A ${suffix}` } }),
+    prisma.company.create({ data: { name: `Fiscal B ${suffix}` } }),
+  ]);
+  try {
+    await prisma.financialYear.create({
+      data: {
+        companyId: companyA.id,
+        name: "FY 2026-27",
+        startDate: new Date("2026-04-01T00:00:00.000Z"),
+        endDate: new Date("2027-03-31T00:00:00.000Z"),
+        booksBeginningDate: new Date("2026-04-01T00:00:00.000Z"),
+      },
+    });
+    const yearsA = await prisma.financialYear.findMany({ where: { companyId: companyA.id } });
+    const yearsB = await prisma.financialYear.findMany({ where: { companyId: companyB.id } });
+    expect(yearsA).toHaveLength(1);
+    expect(yearsB).toHaveLength(0);
+  } finally {
+    await prisma.company.deleteMany({ where: { id: { in: [companyA.id, companyB.id] } } });
   }
 });

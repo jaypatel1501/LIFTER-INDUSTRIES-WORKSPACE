@@ -17,7 +17,7 @@ Use `.env.example` as a names-only checklist. Set at minimum:
 - `AUTH_URL` and `NEXT_PUBLIC_APP_URL` — canonical HTTPS application URL.
 - `NEXT_PUBLIC_APP_NAME` — display name.
 
-Configure `EMAIL_SERVER` and `EMAIL_FROM` together for password reset. OTP requires `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID`, and `SMS_API_URL`; `SMS_API_URL` must implement the JSON gateway contract in [local development](./local-development.md). Set `BLOB_READ_WRITE_TOKEN` for private object storage. GST, e-invoice, e-waybill, and WhatsApp credentials are optional and validated as complete groups.
+Configure `EMAIL_SERVER` and `EMAIL_FROM` together for password reset and company invitations. Invitation links also require the canonical `AUTH_URL` or `NEXT_PUBLIC_APP_URL`. OTP requires `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID`, and `SMS_API_URL`; `SMS_API_URL` must implement the JSON gateway contract in [local development](./local-development.md). Set `BLOB_READ_WRITE_TOKEN` for private object storage and company logos. GST, e-invoice, e-waybill, and WhatsApp credentials are optional and validated as complete groups.
 
 Only `NEXT_PUBLIC_*` variables are exposed to browser bundles. Keep database, Auth.js, mail, SMS, GST and storage credentials server-only.
 

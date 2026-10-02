@@ -18,3 +18,17 @@ test("liveness endpoint responds successfully", async ({ request }) => {
   expect(response.ok()).toBeTruthy();
   await expect(response).toBeOK();
 });
+
+test("company management pages require an authenticated session", async ({ page }) => {
+  for (const path of [
+    "/dashboard/company",
+    "/dashboard/users",
+    "/dashboard/roles",
+    "/dashboard/financial-years",
+    "/dashboard/security",
+    "/dashboard/audit",
+  ]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login$/);
+  }
+});

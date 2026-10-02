@@ -45,9 +45,9 @@ Open `http://localhost:3000`. Prisma CLI and Next.js both load the root `.env` f
 
 ## Optional integrations
 
-- Configure `EMAIL_SERVER` and `EMAIL_FROM` together to enable reset emails. The reset endpoint does not disclose whether an account exists.
+- Configure `EMAIL_SERVER` and `EMAIL_FROM` together to enable reset emails and company invitations. Invitation links also require `AUTH_URL` or `NEXT_PUBLIC_APP_URL`. The reset endpoint does not disclose whether an account exists.
 - Configure `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID` and `SMS_API_URL` together to enable mobile OTP. The configured REST gateway receives `POST` JSON `{ "provider", "from", "to", "message" }` and a bearer API key; it must return a 2xx response only after accepting the message.
-- Configure `BLOB_READ_WRITE_TOKEN` for private Vercel Blob storage. Upload helpers require an authenticated active company and store files under a company-specific path.
+- Configure `BLOB_READ_WRITE_TOKEN` for private Vercel Blob storage. Upload helpers require an authenticated active company and store files under a company-specific path; company logos are served through an authenticated proxy and limited to 2 MB.
 - GST, e-invoice, e-waybill and WhatsApp credential groups are validated as complete sets before configured integrations are used.
 
 ## Tests and utilities

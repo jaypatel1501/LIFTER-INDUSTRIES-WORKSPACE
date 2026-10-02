@@ -82,6 +82,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               await tx.loginHistory.create({
                 data: { userId: user.id, success: false, ipAddress, userAgent: userAgent ?? null },
               });
+              for (const membership of user.memberships) {
+                await writeAuditLog(
+                  {
+                    companyId: membership.companyId,
+                    actorId: user.id,
+                    action: "AUTH_LOGIN_FAILED",
+                    entityType: "User",
+                    entityId: user.id,
+                    ipAddress,
+                    userAgent,
+                  },
+                  tx,
+                );
+              }
               if (failedUser.failedLoginCount >= 5) {
                 await tx.user.update({
                   where: { id: user.id },
@@ -197,6 +211,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               userAgent: userAgent ?? null,
             },
           });
+          if (!valid) {
+            for (const membership of user.memberships) {
+              await writeAuditLog(
+                {
+                  companyId: membership.companyId,
+                  actorId: user.id,
+                  action: "AUTH_OTP_LOGIN_FAILED",
+                  entityType: "User",
+                  entityId: user.id,
+                  ipAddress,
+                  userAgent,
+                },
+                tx,
+              );
+            }
+          }
           if (valid) {
             await tx.authSession.create({
               data: {

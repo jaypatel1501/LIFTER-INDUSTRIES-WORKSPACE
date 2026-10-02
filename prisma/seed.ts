@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { MembershipStatus, PrismaClient } from "@prisma/client";
 import { loadEnvConfig } from "@next/env";
 import { passwordSchema, emailSchema } from "../lib/validation/auth";
+import { grantPermissionsToRole, OWNER_PERMISSIONS } from "../lib/company-permissions";
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
@@ -35,38 +36,28 @@ async function main() {
       data: {
         name: "Development Company",
         memberships: { create: { userId: user.id, status: MembershipStatus.ACTIVE, isDefault: true } },
-        roles: { create: { name: "Owner", description: "Development company owner", isSystem: true } },
+        roles: {
+          create: [
+            { name: "Owner", description: "Development company owner", isSystem: true },
+            { name: "Member", description: "Standard company member", isSystem: true },
+          ],
+        },
       },
-      include: { roles: { select: { id: true }, take: 1 } },
+      include: { roles: { select: { id: true, name: true } } },
     });
-    const role = company.roles[0];
+    const role = company.roles.find(({ name }) => name === "Owner");
+    const memberRole = company.roles.find(({ name }) => name === "Member");
     if (!role) throw new Error("Could not create development owner role");
+    if (!memberRole) throw new Error("Could not create development member role");
     membership = await prisma.membership.findUniqueOrThrow({
       where: { userId_companyId: { userId: user.id, companyId: company.id } },
       select: { id: true, companyId: true },
     });
 
-    const permissions = [
-      ["company", "read"],
-      ["company", "update"],
-      ["members", "read"],
-      ["members", "invite"],
-      ["roles", "manage"],
-      ["audit", "read"],
-      ["profile", "manage"],
-    ] as const;
-    for (const [resource, action] of permissions) {
-      const permission = await prisma.permission.upsert({
-        where: { resource_action: { resource, action } },
-        create: { resource, action },
-        update: {},
-      });
-      await prisma.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
-        create: { roleId: role.id, permissionId: permission.id },
-        update: {},
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      await grantPermissionsToRole(tx, role.id, OWNER_PERMISSIONS);
+      await grantPermissionsToRole(tx, memberRole.id, [["company", "read"]]);
+    });
     await prisma.membershipRole.upsert({
       where: { membershipId_roleId: { membershipId: membership.id, roleId: role.id } },
       create: { membershipId: membership.id, roleId: role.id },

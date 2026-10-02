@@ -87,7 +87,15 @@ export function verifyCompanySwitchProof(
 }
 
 export function getPasswordResetUrl(token: string) {
+  return new URL(`/reset-password?token=${encodeURIComponent(token)}`, getApplicationUrl()).toString();
+}
+
+export function getLoginUrl() {
+  return new URL("/login", getApplicationUrl()).toString();
+}
+
+function getApplicationUrl() {
   const baseUrl = env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL;
   if (!baseUrl) throw new Error("NEXT_PUBLIC_APP_URL or AUTH_URL is required");
-  return new URL(`/reset-password?token=${encodeURIComponent(token)}`, baseUrl).toString();
+  return baseUrl;
 }

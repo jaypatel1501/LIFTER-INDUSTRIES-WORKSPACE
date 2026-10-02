@@ -98,6 +98,7 @@ export async function PUT(request: Request) {
         where: { id: reset.userId },
         data: {
           passwordHash,
+          emailVerifiedAt: now,
           failedLoginCount: 0,
           lockedUntil: null,
           sessionVersion: { increment: 1 },

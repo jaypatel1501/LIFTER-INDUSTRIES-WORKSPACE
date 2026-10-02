@@ -2,9 +2,11 @@
 
 ## Schema
 
-`prisma/schema.prisma` uses PostgreSQL and defines the initial identity/security foundation: users, companies, memberships, company roles, global permissions, role and membership joins, audit events, password reset tokens, OTP challenges, login history and rate limits.
+`prisma/schema.prisma` uses PostgreSQL and defines users, companies, memberships, company roles, global permissions, role and membership joins, audit events, password reset tokens, OTP challenges, login history, auth sessions, rate limits, and company financial years. Company configuration covers Indian tax identifiers, registered address/contact details, logo object URL, time zone/currency, books-beginning date, and financial-year start month.
 
 Company-owned records include a `companyId` foreign key, an index, and tenant-aware uniqueness where applicable. Membership and permission joins have composite primary keys. Foreign keys specify deletion behavior; audit entries restrict company deletion and retain actor history when a user is deleted.
+
+The company-management migration adds the financial-year table and its company foreign key, date-range and company/start-date constraints, PAN/GSTIN/state-code checks, and indexes for PAN, GST state and financial-year filtering. It also backfills the company-management action catalog, grants existing system Owners the new management actions, and creates a standard Member group for existing companies.
 
 All API reads and writes must verify an active company membership. Use `requireCompanyContext` for tenant context and `requirePermission(resource, action)` for action checks. Always include `companyId` in subsequent tenant queries. Use transactions for multi-record writes and add audit entries in the same transaction.
 
