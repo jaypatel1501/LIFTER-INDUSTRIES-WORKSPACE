@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { ensureDefaultChart } from "@/lib/accounting/default-chart";
+import { createPostedVoucherWithinTransaction } from "@/lib/accounting/voucher-platform";
 import { hashIdempotencyKey } from "@/lib/idempotency";
 import { withTransaction } from "@/lib/transactions";
 import type { ledgerCreateSchema, partyCreateSchema } from "@/lib/validation/accounting";
@@ -81,52 +82,35 @@ async function postOpeningVoucher(
   const credit = options.side === "CREDIT" ? value : new Prisma.Decimal(0);
   const counterpartDebit = debit.isZero() ? value : new Prisma.Decimal(0);
   const counterpartCredit = credit.isZero() ? value : new Prisma.Decimal(0);
-  const voucher = await tx.accountingVoucher.create({
-    data: {
-      companyId: options.companyId,
-      voucherNumber: `OB-${options.date.replaceAll("-", "")}-${options.key.slice(0, 20).toUpperCase()}`,
+  const voucher = await createPostedVoucherWithinTransaction(
+    tx,
+    { companyId: options.companyId, userId: options.actorId },
+    {
       type: "OPENING_BALANCE",
-      status: "POSTED",
-      voucherDate: date,
+      voucherDate: options.date,
       narration: `Opening balance · ${options.description}`,
       idempotencyKey: options.key,
       requestHash: options.payloadHash,
-      createdById: options.actorId,
-    },
-    select: { id: true },
-  });
-  const voucherLine = await tx.voucherLine.create({
-    data: {
-      companyId: options.companyId,
-      voucherId: voucher.id,
-      ledgerId: options.ledgerId,
-      description: `Opening ${options.side.toLowerCase()} balance`,
-      debit,
-      credit,
-    },
-    select: { id: true },
-  });
-  await tx.voucherLine.create({
-    data: {
-      companyId: options.companyId,
-      voucherId: voucher.id,
-      ledgerId: chart.openingLedgerId,
-      description: "Opening balance offset",
-      debit: counterpartDebit,
-      credit: counterpartCredit,
-    },
-  });
-  if (options.bills?.length) {
-    await tx.billWiseOpening.createMany({
-      data: options.bills.map((bill) => ({
-        companyId: options.companyId,
-        voucherLineId: voucherLine.id,
-        referenceNumber: bill.referenceNumber,
-        dueDate: openingDate(bill.dueDate),
-        amount: amount(bill.amount),
+      lines: [
+        {
+          ledgerId: options.ledgerId,
+          description: `Opening ${options.side.toLowerCase()} balance`,
+          debit: debit.toString(),
+          credit: credit.toString(),
+        },
+        {
+          ledgerId: chart.openingLedgerId,
+          description: "Opening balance offset",
+          debit: counterpartDebit.toString(),
+          credit: counterpartCredit.toString(),
+        },
+      ],
+      legacyBills: (options.bills ?? []).map((bill) => ({
+        lineIndex: 0,
+        ...bill,
       })),
-    });
-  }
+    },
+  );
   return voucher.id;
 }
 

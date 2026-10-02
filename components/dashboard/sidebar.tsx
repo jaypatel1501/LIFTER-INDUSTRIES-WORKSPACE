@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Barcode, Building2, Boxes, FileBarChart2, History, Layers3, LayoutDashboard, MapPinned, Ruler, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import { Barcode, Building2, Boxes, FileBarChart2, History, Layers3, LayoutDashboard, MapPinned, ReceiptText, Ruler, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
 import { getDictionary } from "@/lib/i18n";
 import { useDashboardUiStore } from "@/lib/ui-store";
 import type { Locale } from "@prisma/client";
@@ -23,6 +23,11 @@ const managementLinks: {
   { href: "/dashboard/ledgers", permission: "ledgers:read", english: "Ledgers", hindi: "खाते", Icon: WalletCards },
   { href: "/dashboard/ledger-groups", permission: "ledger-groups:read", english: "Ledger groups", hindi: "खाता समूह", Icon: Layers3 },
   { href: "/dashboard/accounting-reports", permission: "vouchers:read", english: "Accounting reports", hindi: "लेखा रिपोर्ट", Icon: FileBarChart2 },
+  { href: "/dashboard/vouchers", permission: "vouchers:read", english: "Vouchers", hindi: "वाउचर", Icon: ReceiptText },
+  { href: "/dashboard/day-book", permission: "vouchers:read", english: "Day Book", hindi: "डे बुक", Icon: History },
+  { href: "/dashboard/tax-transactions", permission: "vouchers:read", english: "Tax transactions", hindi: "कर लेनदेन", Icon: FileBarChart2 },
+  { href: "/dashboard/voucher-series", permission: "voucher-series:manage", english: "Voucher number series", hindi: "वाउचर नंबर श्रृंखला", Icon: ReceiptText },
+  { href: "/dashboard/cost-centres", permission: "vouchers:read", english: "Cost centres", hindi: "लागत केंद्र", Icon: Layers3 },
   { href: "/dashboard/inventory", permission: "inventory:read", english: "Stock items", hindi: "स्टॉक आइटम", Icon: Boxes },
   { href: "/dashboard/stock-groups", permission: "stock-groups:read", english: "Stock groups", hindi: "स्टॉक समूह", Icon: Layers3 },
   { href: "/dashboard/units", permission: "units:read", english: "Units & conversions", hindi: "इकाइयाँ और रूपांतरण", Icon: Ruler },

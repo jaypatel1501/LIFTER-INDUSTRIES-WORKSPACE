@@ -22,7 +22,7 @@ export async function GET(_request: Request, route: RouteContext) {
           include: {
             group: { select: { id: true, name: true, code: true } },
             voucherLines: {
-              where: { voucher: { is: { companyId: context.companyId, status: "POSTED" } } },
+              where: { voucher: { is: { companyId: context.companyId, status: { in: ["POSTED", "REVERSED"] } } } },
               orderBy: [{ voucher: { voucherDate: "desc" } }, { id: "desc" }],
               take: 20,
               include: {
@@ -37,7 +37,7 @@ export async function GET(_request: Request, route: RouteContext) {
     if (!party) throw new NotFoundError("Party not found");
     const totals = party.ledger
       ? await prisma.voucherLine.aggregate({
-          where: { companyId: context.companyId, ledgerId: party.ledger.id, voucher: { is: { status: "POSTED" } } },
+          where: { companyId: context.companyId, ledgerId: party.ledger.id, voucher: { is: { status: { in: ["POSTED", "REVERSED"] } } } },
           _sum: { debit: true, credit: true },
         })
       : null;

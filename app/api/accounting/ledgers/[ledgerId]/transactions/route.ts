@@ -47,7 +47,7 @@ export async function GET(request: Request, route: RouteContext) {
       voucher: {
         is: {
           companyId: context.companyId,
-          status: "POSTED",
+          status: { in: ["POSTED", "REVERSED"] },
           ...(query.from || query.to ? {
             voucherDate: {
               ...(query.from ? { gte: new Date(`${query.from}T00:00:00.000Z`) } : {}),
@@ -82,7 +82,7 @@ export async function GET(request: Request, route: RouteContext) {
           voucher: {
             is: {
               companyId: context.companyId,
-              status: "POSTED",
+              status: { in: ["POSTED", "REVERSED"] },
               ...(query.to ? { voucherDate: { lte: new Date(`${query.to}T00:00:00.000Z`) } } : {}),
             },
           },

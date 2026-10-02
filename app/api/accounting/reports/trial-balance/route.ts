@@ -52,7 +52,7 @@ export async function GET(request: Request) {
           voucher: {
             is: {
               companyId: context.companyId,
-              status: "POSTED",
+              status: { in: ["POSTED", "REVERSED"] },
               ...(asOfDate ? { voucherDate: { lte: asOfDate } } : {}),
             },
           },

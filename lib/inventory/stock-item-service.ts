@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "@/lib/audit";
 import { ensureDefaultChart } from "@/lib/accounting/default-chart";
+import { createPostedVoucherWithinTransaction } from "@/lib/accounting/voucher-platform";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashIdempotencyKey } from "@/lib/idempotency";
 import { postInventoryMovement } from "@/lib/inventory/post-movement";
@@ -148,40 +149,31 @@ export async function createStockItemWithOpening(
         new Prisma.Decimal(0),
       );
       if (openingValue.greaterThan(0)) {
-        const voucher = await tx.accountingVoucher.create({
-          data: {
-            companyId: context.companyId,
-            voucherNumber: `STK-${dateText.replaceAll("-", "")}-${key.slice(0, 12).toUpperCase()}`,
+        const voucher = await createPostedVoucherWithinTransaction(
+          tx,
+          context,
+          {
             type: "OPENING_BALANCE",
-            status: "POSTED",
-            voucherDate: dateValue(dateText),
+            voucherDate: dateText,
             narration: `Opening stock · ${item.name}`,
             idempotencyKey: key,
             requestHash,
-            createdById: context.userId,
+            lines: [
+              {
+                ledgerId: chart.inventoryLedgerId,
+                description: `Opening stock · ${item.name}`,
+                debit: openingValue.toString(),
+                credit: "0",
+              },
+              {
+                ledgerId: chart.openingLedgerId,
+                description: "Opening stock offset",
+                debit: "0",
+                credit: openingValue.toString(),
+              },
+            ],
           },
-          select: { id: true },
-        });
-        await tx.voucherLine.createMany({
-          data: [
-            {
-              companyId: context.companyId,
-              voucherId: voucher.id,
-              ledgerId: chart.inventoryLedgerId,
-              description: `Opening stock · ${item.name}`,
-              debit: openingValue,
-              credit: new Prisma.Decimal(0),
-            },
-            {
-              companyId: context.companyId,
-              voucherId: voucher.id,
-              ledgerId: chart.openingLedgerId,
-              description: "Opening stock offset",
-              debit: new Prisma.Decimal(0),
-              credit: openingValue,
-            },
-          ],
-        });
+        );
         voucherId = voucher.id;
       }
 
