@@ -29,35 +29,74 @@ enum FinancialYearStatus {
   CLOSED
 }
 
+enum PartyType {
+  CUSTOMER
+  SUPPLIER
+}
+
+enum LedgerType {
+  GENERAL
+  CASH
+  BANK
+  TAX
+  INCOME
+  EXPENSE
+  PARTY
+}
+
+enum AccountNature {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum VoucherType {
+  OPENING_BALANCE
+  JOURNAL
+  SALES
+  PURCHASE
+  PAYMENT
+  RECEIPT
+  CONTRA
+}
+
+enum VoucherStatus {
+  POSTED
+  CANCELLED
+}
+
 model User {
-  id               String               @id @default(cuid())
-  email            String               @unique
-  normalizedEmail  String               @unique
-  name             String?
-  mobile           String?              @unique
-  passwordHash     String
-  locale           Locale               @default(EN)
-  emailVerifiedAt  DateTime?
-  failedLoginCount Int                  @default(0)
-  lockedUntil      DateTime?
-  sessionVersion   Int                  @default(0)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  memberships      Membership[]
-  resetTokens      PasswordResetToken[]
-  otpChallenges    OtpChallenge[]
-  auditLogs        AuditLog[]           @relation("AuditActor")
-  loginHistory     LoginHistory[]
-  authSessions     AuthSession[]
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  normalizedEmail    String               @unique
+  name               String?
+  mobile             String?              @unique
+  passwordHash       String
+  locale             Locale               @default(EN)
+  emailVerifiedAt    DateTime?
+  failedLoginCount   Int                  @default(0)
+  lockedUntil        DateTime?
+  sessionVersion     Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  memberships        Membership[]
+  resetTokens        PasswordResetToken[]
+  otpChallenges      OtpChallenge[]
+  auditLogs          AuditLog[]           @relation("AuditActor")
+  loginHistory       LoginHistory[]
+  authSessions       AuthSession[]
+  accountingVouchers AccountingVoucher[]  @relation("VoucherCreator")
 
   @@index([mobile])
 }
 
 model Company {
-  id                      String          @id @default(cuid())
+  id                      String              @id @default(cuid())
   name                    String
   legalName               String?
-  gstin                   String?         @unique
+  gstin                   String?             @unique
   pan                     String?
   addressLine1            String?
   addressLine2            String?
@@ -65,22 +104,26 @@ model Company {
   state                   String?
   stateCode               String?
   postalCode              String?
-  country                 String          @default("India")
+  country                 String              @default("India")
   email                   String?
   phone                   String?
   website                 String?
   logoUrl                 String?
-  booksBeginningDate      DateTime?       @db.Date
-  financialYearStartMonth Int             @default(4)
-  timezone                String          @default("Asia/Kolkata")
-  currency                String          @default("INR")
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
+  booksBeginningDate      DateTime?           @db.Date
+  financialYearStartMonth Int                 @default(4)
+  timezone                String              @default("Asia/Kolkata")
+  currency                String              @default("INR")
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
   memberships             Membership[]
   roles                   Role[]
   financialYears          FinancialYear[]
   auditLogs               AuditLog[]
   rateLimits              RateLimit[]
+  parties                 Party[]
+  ledgerGroups            LedgerGroup[]
+  ledgers                 Ledger[]
+  accountingVouchers      AccountingVoucher[]
 
   @@index([name])
   @@index([pan])
@@ -102,6 +145,150 @@ model FinancialYear {
   @@unique([companyId, startDate])
   @@index([companyId, status, startDate])
   @@index([companyId, endDate])
+}
+
+model Party {
+  id               String    @id @default(cuid())
+  companyId        String
+  type             PartyType
+  name             String
+  contactName      String?
+  email            String?
+  phone            String?
+  mobile           String?
+  gstin            String?
+  pan              String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  stateCode        String?
+  postalCode       String?
+  country          String    @default("India")
+  creditPeriodDays Int       @default(0)
+  creditLimit      Decimal   @default(0) @db.Decimal(18, 2)
+  isActive         Boolean   @default(true)
+  creationKey      String
+  creationHash     String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledger           Ledger?
+
+  @@unique([companyId, id])
+  @@unique([companyId, creationKey])
+  @@unique([companyId, gstin])
+  @@index([companyId, type, isActive, name])
+  @@index([companyId, pan])
+  @@index([companyId, stateCode])
+}
+
+model LedgerGroup {
+  id        String        @id @default(cuid())
+  companyId String
+  parentId  String?
+  name      String
+  code      String
+  nature    AccountNature
+  isSystem  Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    LedgerGroup?  @relation("LedgerGroupTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children  LedgerGroup[] @relation("LedgerGroupTree")
+  ledgers   Ledger[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId])
+  @@index([companyId, nature])
+}
+
+model Ledger {
+  id                String        @id @default(cuid())
+  companyId         String
+  groupId           String
+  partyId           String?
+  name              String
+  code              String?
+  type              LedgerType    @default(GENERAL)
+  isSystem          Boolean       @default(false)
+  costCentreEnabled Boolean       @default(false)
+  interestEnabled   Boolean       @default(false)
+  interestRate      Decimal?      @db.Decimal(7, 4)
+  isActive          Boolean       @default(true)
+  creationKey       String
+  creationHash      String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  company           Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group             LedgerGroup   @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
+  party             Party?        @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  voucherLines      VoucherLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@unique([companyId, partyId])
+  @@unique([companyId, creationKey])
+  @@index([companyId, groupId, isActive, name])
+  @@index([companyId, type, isActive])
+}
+
+model AccountingVoucher {
+  id             String        @id @default(cuid())
+  companyId      String
+  voucherNumber  String
+  type           VoucherType
+  status         VoucherStatus @default(POSTED)
+  voucherDate    DateTime      @db.Date
+  narration      String?
+  idempotencyKey String
+  requestHash    String
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy      User?         @relation("VoucherCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  lines          VoucherLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, voucherNumber])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, type, voucherDate])
+  @@index([companyId, status, voucherDate])
+}
+
+model VoucherLine {
+  id          String            @id @default(cuid())
+  companyId   String
+  voucherId   String
+  ledgerId    String
+  description String?
+  debit       Decimal           @default(0) @db.Decimal(18, 2)
+  credit      Decimal           @default(0) @db.Decimal(18, 2)
+  createdAt   DateTime          @default(now())
+  voucher     AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  ledger      Ledger            @relation(fields: [companyId, ledgerId], references: [companyId, id], onDelete: Restrict)
+  billDetails BillWiseOpening[]
+
+  @@unique([companyId, id])
+  @@index([companyId, ledgerId, voucherId])
+  @@index([companyId, voucherId])
+}
+
+model BillWiseOpening {
+  id              String      @id @default(cuid())
+  companyId       String
+  voucherLineId   String
+  referenceNumber String
+  dueDate         DateTime    @db.Date
+  amount          Decimal     @db.Decimal(18, 2)
+  createdAt       DateTime    @default(now())
+  voucherLine     VoucherLine @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, voucherLineId, referenceNumber])
+  @@index([companyId, dueDate])
 }
 
 model Membership {

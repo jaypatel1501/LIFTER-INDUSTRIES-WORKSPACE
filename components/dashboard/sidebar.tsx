@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, History, LayoutDashboard, Settings2, Shield, Users, WalletCards, type LucideIcon } from "lucide-react";
+import { Building2, FileBarChart2, History, Layers3, LayoutDashboard, Settings2, Shield, Users, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
 import { getDictionary } from "@/lib/i18n";
 import { useDashboardUiStore } from "@/lib/ui-store";
 import type { Locale } from "@prisma/client";
@@ -19,6 +19,10 @@ const managementLinks: {
   { href: "/dashboard/financial-years", permission: "financial-years:read", english: "Financial years", hindi: "वित्तीय वर्ष", Icon: WalletCards },
   { href: "/dashboard/security", permission: "sessions:read", english: "Login & sessions", hindi: "लॉगिन और सत्र", Icon: History },
   { href: "/dashboard/audit", permission: "audit:read", english: "Audit trail", hindi: "ऑडिट ट्रेल", Icon: History },
+  { href: "/dashboard/parties", permission: "parties:read", english: "Customers & suppliers", hindi: "ग्राहक और आपूर्तिकर्ता", Icon: UsersRound },
+  { href: "/dashboard/ledgers", permission: "ledgers:read", english: "Ledgers", hindi: "खाते", Icon: WalletCards },
+  { href: "/dashboard/ledger-groups", permission: "ledger-groups:read", english: "Ledger groups", hindi: "खाता समूह", Icon: Layers3 },
+  { href: "/dashboard/accounting-reports", permission: "vouchers:read", english: "Accounting reports", hindi: "लेखा रिपोर्ट", Icon: FileBarChart2 },
 ];
 
 export function Sidebar({ locale, permissions }: { locale: Locale; permissions: string[] }) {

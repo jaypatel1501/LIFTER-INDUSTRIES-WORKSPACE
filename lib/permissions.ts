@@ -22,7 +22,7 @@ export async function requireCompanyContext(companyId?: string) {
     select: {
       id: true,
       companyId: true,
-      company: { select: { id: true, name: true, currency: true, timezone: true } },
+      company: { select: { id: true, name: true, currency: true, timezone: true, booksBeginningDate: true } },
     },
   });
   if (!membership) throw new AuthorizationError("Active company membership required");
@@ -54,6 +54,29 @@ export async function requirePermission(resource: string, action: string) {
   });
   if (!permission) throw new AuthorizationError();
   return context;
+}
+
+export async function hasPermission(
+  context: { membershipId: string; companyId: string },
+  resource: string,
+  action: string,
+) {
+  const permission = await prisma.permission.findFirst({
+    where: {
+      resource,
+      action,
+      roles: {
+        some: {
+          role: {
+            companyId: context.companyId,
+            memberships: { some: { membershipId: context.membershipId } },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  return permission !== null;
 }
 
 export function tenantWhere<T extends { companyId?: string }>(companyId: string, where?: T) {

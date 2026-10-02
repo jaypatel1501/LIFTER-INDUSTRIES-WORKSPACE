@@ -15,6 +15,15 @@ export const COMPANY_PERMISSION_CATALOG = [
   { resource: "financial-years", action: "manage", label: "Create financial years" },
   { resource: "financial-years", action: "close", label: "Close financial years" },
   { resource: "profile", action: "manage", label: "Manage personal preferences" },
+  { resource: "parties", action: "read", label: "View customers and suppliers" },
+  { resource: "parties", action: "create", label: "Create customers and suppliers" },
+  { resource: "parties", action: "update", label: "Update customers and suppliers" },
+  { resource: "ledgers", action: "read", label: "View ledgers and accounting reports" },
+  { resource: "ledgers", action: "create", label: "Create ledgers" },
+  { resource: "ledgers", action: "update", label: "Update ledgers" },
+  { resource: "ledger-groups", action: "read", label: "View ledger groups" },
+  { resource: "ledger-groups", action: "manage", label: "Manage ledger groups" },
+  { resource: "vouchers", action: "read", label: "View voucher history and trial balance" },
 ] as const;
 
 export const OWNER_PERMISSIONS = COMPANY_PERMISSION_CATALOG.map(
