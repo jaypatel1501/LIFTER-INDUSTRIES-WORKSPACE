@@ -1,0 +1,92 @@
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { ensureDefaultInventoryMasters } from "@/lib/inventory/defaults";
+import { createStockItemWithOpening } from "@/lib/inventory/stock-item-service";
+import { stockItemCreateSchema } from "@/lib/validation/inventory";
+
+const databaseTest = process.env.RUN_DB_TESTS === "1" ? test : test.skip;
+
+databaseTest("opening stock is idempotent, balanced and isolated to its company", async () => {
+  const suffix = randomUUID();
+  const user = await prisma.user.create({
+    data: {
+      email: `inventory-${suffix}@example.test`,
+      normalizedEmail: `inventory-${suffix}@example.test`,
+      passwordHash: "not-used-in-this-database-test",
+    },
+  });
+  const [company, otherCompany] = await Promise.all([
+    prisma.company.create({
+      data: { name: `Inventory ${suffix}`, booksBeginningDate: new Date("2026-04-01T00:00:00.000Z") },
+    }),
+    prisma.company.create({ data: { name: `Other inventory ${suffix}` } }),
+  ]);
+  const context = { companyId: company.id, userId: user.id };
+
+  try {
+    const defaults = await prisma.$transaction((tx) => ensureDefaultInventoryMasters(tx, company.id));
+    const input = stockItemCreateSchema.parse({
+      name: "Opening Stock Test",
+      code: `OPEN-${suffix.slice(0, 8).toUpperCase()}`,
+      groupId: defaults.groups.get("GENERAL"),
+      baseUnitId: defaults.units.get("pcs"),
+      gstRate: "5",
+      purchaseRate: "10",
+      salesRate: "15",
+      openingDate: "2026-04-01",
+      openingStock: [{
+        warehouseId: defaults.warehouseId,
+        quantity: "2",
+        unitCost: "10.1234",
+      }],
+    });
+    const first = await createStockItemWithOpening(context, input, `opening-${suffix}`, {});
+    const replay = await createStockItemWithOpening(context, input, `opening-${suffix}`, {});
+    const [balances, movements, vouchers, otherTenantItem] = await Promise.all([
+      prisma.stockBalance.findMany({ where: { companyId: company.id, itemId: first.item.id } }),
+      prisma.inventoryMovement.findMany({ where: { companyId: company.id, itemId: first.item.id } }),
+      prisma.accountingVoucher.findMany({ where: { companyId: company.id, type: "OPENING_BALANCE" }, include: { lines: true } }),
+      prisma.stockItem.findFirst({ where: { companyId: otherCompany.id, id: first.item.id } }),
+    ]);
+    const balance = balances[0];
+    const voucher = vouchers[0];
+    if (!balance || !voucher) throw new Error("Opening stock must create a stock balance and an accounting voucher");
+    const debit = voucher.lines.reduce((sum, line) => sum.plus(line.debit), new Prisma.Decimal(0));
+    const credit = voucher.lines.reduce((sum, line) => sum.plus(line.credit), new Prisma.Decimal(0));
+
+    expect(first.replayed).toBe(false);
+    expect(replay.replayed).toBe(true);
+    expect(replay.item.id).toBe(first.item.id);
+    expect(balances).toHaveLength(1);
+    expect(balance.quantity.toString()).toBe("2");
+    expect(balance.value.toString()).toBe("20.25");
+    expect(movements).toHaveLength(1);
+    expect(vouchers).toHaveLength(1);
+    expect(debit.equals(credit)).toBe(true);
+    expect(debit.toString()).toBe(balance.value.toString());
+    expect(otherTenantItem).toBeNull();
+  } finally {
+    await prisma.$transaction(async (tx) => {
+      await tx.auditLog.deleteMany({ where: { companyId: company.id } });
+      await tx.inventoryMovement.deleteMany({ where: { companyId: company.id } });
+      await tx.stockBalance.deleteMany({ where: { companyId: company.id } });
+      await tx.inventoryBatch.deleteMany({ where: { companyId: company.id } });
+      await tx.itemUnitConversion.deleteMany({ where: { companyId: company.id } });
+      await tx.stockItem.deleteMany({ where: { companyId: company.id } });
+      await tx.voucherLine.deleteMany({ where: { companyId: company.id } });
+      await tx.accountingVoucher.deleteMany({ where: { companyId: company.id } });
+      await tx.ledger.deleteMany({ where: { companyId: company.id } });
+      await tx.ledgerGroup.updateMany({ where: { companyId: company.id }, data: { parentId: null } });
+      await tx.ledgerGroup.deleteMany({ where: { companyId: company.id } });
+      await tx.stockGroup.updateMany({ where: { companyId: company.id }, data: { parentId: null } });
+      await tx.stockGroup.deleteMany({ where: { companyId: company.id } });
+      await tx.unitConversion.deleteMany({ where: { companyId: company.id } });
+      await tx.unitOfMeasure.deleteMany({ where: { companyId: company.id } });
+      await tx.warehouse.deleteMany({ where: { companyId: company.id } });
+      await tx.company.delete({ where: { id: company.id } });
+      await tx.company.delete({ where: { id: otherCompany.id } });
+      await tx.user.delete({ where: { id: user.id } });
+    });
+  }
+});

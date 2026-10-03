@@ -1,0 +1,1476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Locale {
+  EN
+  HI
+  BILINGUAL
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum OtpPurpose {
+  LOGIN
+}
+
+enum FinancialYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum PartyType {
+  CUSTOMER
+  SUPPLIER
+}
+
+enum LedgerType {
+  GENERAL
+  CASH
+  BANK
+  TAX
+  INCOME
+  EXPENSE
+  PARTY
+}
+
+enum AccountNature {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum VoucherType {
+  OPENING_BALANCE
+  JOURNAL
+  SALES
+  PURCHASE
+  PAYMENT
+  RECEIPT
+  CONTRA
+  SALES_RETURN
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  CHEQUE
+  UPI
+  NEFT
+  RTGS
+}
+
+enum VoucherStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum VoucherApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VoucherTaxType {
+  CGST
+  SGST
+  UTGST
+  IGST
+  CESS
+  TDS
+  TCS
+  OTHER
+}
+
+enum BillReferenceType {
+  NEW
+  AGAINST_REF
+  ON_ACCOUNT
+}
+
+enum DayBookEventType {
+  DRAFT_CREATED
+  DRAFT_UPDATED
+  APPROVAL_REQUESTED
+  APPROVED
+  REJECTED
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum VoucherAuditAction {
+  CREATED
+  UPDATED
+  APPROVAL_REQUESTED
+  APPROVED
+  REJECTED
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum InventoryMovementType {
+  OPENING
+  PURCHASE
+  SALES
+  SALES_RETURN
+  PURCHASE_RETURN
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  PRODUCTION_IN
+  PRODUCTION_OUT
+  JOB_WORK_IN
+  JOB_WORK_OUT
+}
+
+enum InventoryDirection {
+  IN
+  OUT
+}
+
+enum SalesDocumentType {
+  QUOTATION
+  SALES_ORDER
+  DELIVERY_NOTE
+  SALES_INVOICE
+}
+
+enum SalesDocumentStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  REJECTED
+  PARTIALLY_DELIVERED
+  DELIVERED
+  PARTIALLY_INVOICED
+  INVOICED
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum SalesPaymentMode {
+  CASH
+  CREDIT
+}
+
+enum SalesInvoiceNature {
+  GOODS
+  SERVICE
+}
+
+enum SalesDocumentEventType {
+  CREATED
+  ISSUED
+  ACCEPTED
+  REJECTED
+  ORDER_CREATED
+  DELIVERY_POSTED
+  INVOICE_POSTED
+  CANCELLED
+  REVERSED
+  EMAIL_SENT
+  WHATSAPP_SENT
+}
+
+enum PurchaseDocumentType {
+  PURCHASE_ORDER
+  RECEIPT_NOTE
+  PURCHASE_INVOICE
+  PURCHASE_RETURN
+}
+
+enum PurchaseDocumentStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  PARTIALLY_INVOICED
+  INVOICED
+  POSTED
+  CANCELLED
+  REVERSED
+}
+
+enum PurchasePaymentMode {
+  CASH
+  CREDIT
+}
+
+enum PurchaseDocumentEventType {
+  CREATED
+  ORDERED
+  RECEIPT_POSTED
+  INVOICE_POSTED
+  RETURN_POSTED
+  CANCELLED
+  REVERSED
+}
+
+model User {
+  id                       String                  @id @default(cuid())
+  email                    String                  @unique
+  normalizedEmail          String                  @unique
+  name                     String?
+  mobile                   String?                 @unique
+  passwordHash             String
+  locale                   Locale                  @default(EN)
+  emailVerifiedAt          DateTime?
+  failedLoginCount         Int                     @default(0)
+  lockedUntil              DateTime?
+  sessionVersion           Int                     @default(0)
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  memberships              Membership[]
+  resetTokens              PasswordResetToken[]
+  otpChallenges            OtpChallenge[]
+  auditLogs                AuditLog[]              @relation("AuditActor")
+  loginHistory             LoginHistory[]
+  authSessions             AuthSession[]
+  accountingVouchers       AccountingVoucher[]     @relation("VoucherCreator")
+  postedVouchers           AccountingVoucher[]     @relation("VoucherPoster")
+  cancelledVouchers        AccountingVoucher[]     @relation("VoucherCanceller")
+  inventoryMovements       InventoryMovement[]     @relation("InventoryMovementCreator")
+  voucherApprovals         VoucherApprovalAction[] @relation("VoucherApprovalActor")
+  voucherAuditEvents       VoucherAuditEvent[]     @relation("VoucherAuditActor")
+  dayBookEvents            DayBookEntry[]          @relation("DayBookActor")
+  voucherAttachments       VoucherAttachment[]     @relation("VoucherAttachmentCreator")
+  salesDocumentsCreated    SalesDocument[]         @relation("SalesDocumentCreator")
+  salesDocumentsIssued     SalesDocument[]         @relation("SalesDocumentIssuer")
+  salesDocumentEvents      SalesDocumentEvent[]    @relation("SalesDocumentEventActor")
+  purchaseDocumentsCreated PurchaseDocument[]      @relation("PurchaseDocumentCreator")
+  purchaseDocumentsIssued  PurchaseDocument[]      @relation("PurchaseDocumentIssuer")
+  purchaseDocumentEvents   PurchaseDocumentEvent[] @relation("PurchaseDocumentEventActor")
+
+  @@index([mobile])
+}
+
+model Company {
+  id                      String                  @id @default(cuid())
+  name                    String
+  legalName               String?
+  gstin                   String?                 @unique
+  pan                     String?
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  stateCode               String?
+  postalCode              String?
+  country                 String                  @default("India")
+  email                   String?
+  phone                   String?
+  website                 String?
+  logoUrl                 String?
+  booksBeginningDate      DateTime?               @db.Date
+  financialYearStartMonth Int                     @default(4)
+  timezone                String                  @default("Asia/Kolkata")
+  currency                String                  @default("INR")
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  memberships             Membership[]
+  roles                   Role[]
+  financialYears          FinancialYear[]
+  auditLogs               AuditLog[]
+  rateLimits              RateLimit[]
+  parties                 Party[]
+  ledgerGroups            LedgerGroup[]
+  ledgers                 Ledger[]
+  accountingVouchers      AccountingVoucher[]
+  voucherNumberSeries     VoucherNumberSeries[]
+  ledgerTransactions      LedgerTransaction[]
+  taxTransactions         TaxTransaction[]
+  billWiseEntries         BillWiseEntry[]
+  costCentres             CostCentre[]
+  voucherAttachments      VoucherAttachment[]
+  voucherApprovals        VoucherApprovalAction[]
+  voucherAuditEvents      VoucherAuditEvent[]
+  dayBookEntries          DayBookEntry[]
+  stockGroups             StockGroup[]
+  units                   UnitOfMeasure[]
+  unitConversions         UnitConversion[]
+  stockItems              StockItem[]
+  warehouses              Warehouse[]
+  batches                 InventoryBatch[]
+  stockBalances           StockBalance[]
+  inventoryMovements      InventoryMovement[]
+  itemConversions         ItemUnitConversion[]
+  CostAllocation          CostAllocation[]
+  salesNumberSeries       SalesNumberSeries[]
+  salesDocuments          SalesDocument[]
+  salesDocumentLines      SalesDocumentLine[]
+  salesDocumentEvents     SalesDocumentEvent[]
+  purchaseNumberSeries    PurchaseNumberSeries[]
+  purchaseDocuments       PurchaseDocument[]
+  purchaseDocumentLines   PurchaseDocumentLine[]
+  purchaseDocumentEvents  PurchaseDocumentEvent[]
+
+  @@index([name])
+  @@index([pan])
+  @@index([stateCode])
+}
+
+model FinancialYear {
+  id                 String                @id @default(cuid())
+  companyId          String
+  name               String
+  startDate          DateTime              @db.Date
+  endDate            DateTime              @db.Date
+  booksBeginningDate DateTime              @db.Date
+  status             FinancialYearStatus   @default(OPEN)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  company            Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vouchers           AccountingVoucher[]
+  numberSeries       VoucherNumberSeries[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, startDate])
+  @@index([companyId, status, startDate])
+  @@index([companyId, endDate])
+}
+
+model Party {
+  id                String             @id @default(cuid())
+  companyId         String
+  type              PartyType
+  name              String
+  contactName       String?
+  email             String?
+  phone             String?
+  mobile            String?
+  gstin             String?
+  pan               String?
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  stateCode         String?
+  postalCode        String?
+  country           String             @default("India")
+  creditPeriodDays  Int                @default(0)
+  creditLimit       Decimal            @default(0) @db.Decimal(18, 2)
+  isActive          Boolean            @default(true)
+  creationKey       String
+  creationHash      String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledger            Ledger?
+  salesDocuments    SalesDocument[]
+  purchaseDocuments PurchaseDocument[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, creationKey])
+  @@unique([companyId, gstin])
+  @@index([companyId, type, isActive, name])
+  @@index([companyId, pan])
+  @@index([companyId, stateCode])
+}
+
+model LedgerGroup {
+  id        String        @id @default(cuid())
+  companyId String
+  parentId  String?
+  name      String
+  code      String
+  nature    AccountNature
+  isSystem  Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    LedgerGroup?  @relation("LedgerGroupTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children  LedgerGroup[] @relation("LedgerGroupTree")
+  ledgers   Ledger[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId])
+  @@index([companyId, nature])
+}
+
+model Ledger {
+  id                       String              @id @default(cuid())
+  companyId                String
+  groupId                  String
+  partyId                  String?
+  name                     String
+  code                     String?
+  type                     LedgerType          @default(GENERAL)
+  isSystem                 Boolean             @default(false)
+  costCentreEnabled        Boolean             @default(false)
+  interestEnabled          Boolean             @default(false)
+  interestRate             Decimal?            @db.Decimal(7, 4)
+  isActive                 Boolean             @default(true)
+  creationKey              String
+  creationHash             String
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  company                  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group                    LedgerGroup         @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
+  party                    Party?              @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  voucherLines             VoucherLine[]
+  transactions             LedgerTransaction[]
+  taxTransactions          TaxTransaction[]
+  voucherTaxDetails        VoucherTaxDetail[]
+  salesPaymentDocuments    SalesDocument[]     @relation("SalesPaymentLedger")
+  purchasePaymentDocuments PurchaseDocument[]  @relation("PurchasePaymentLedger")
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@unique([companyId, partyId])
+  @@unique([companyId, creationKey])
+  @@index([companyId, groupId, isActive, name])
+  @@index([companyId, type, isActive])
+}
+
+model VoucherNumberSeries {
+  id               String              @id @default(cuid())
+  companyId        String
+  voucherType      VoucherType
+  financialYearId  String?
+  periodKey        String
+  prefix           String
+  suffix           String              @default("")
+  nextNumber       Int                 @default(1)
+  padding          Int                 @default(5)
+  requiresApproval Boolean             @default(false)
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  financialYear    FinancialYear?      @relation(fields: [companyId, financialYearId], references: [companyId, id], onDelete: Restrict)
+  vouchers         AccountingVoucher[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, voucherType, periodKey])
+  @@index([companyId, financialYearId, isActive])
+}
+
+model AccountingVoucher {
+  id                   String                  @id @default(cuid())
+  companyId            String
+  voucherNumber        String
+  type                 VoucherType
+  status               VoucherStatus           @default(POSTED)
+  approvalStatus       VoucherApprovalStatus   @default(NOT_REQUIRED)
+  voucherDate          DateTime                @db.Date
+  financialYearId      String?
+  numberSeriesId       String?
+  narration            String?
+  paymentMethod        PaymentMethod?
+  paymentReference     String?
+  paymentDate          DateTime?               @db.Date
+  paymentBank          String?
+  idempotencyKey       String
+  requestHash          String
+  postIdempotencyKey   String?
+  postRequestHash      String?
+  cancelIdempotencyKey String?
+  cancelRequestHash    String?
+  reversalOfId         String?
+  createdById          String?
+  postedById           String?
+  postedAt             DateTime?
+  cancelledById        String?
+  cancelledAt          DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  financialYear        FinancialYear?          @relation(fields: [companyId, financialYearId], references: [companyId, id], onDelete: Restrict)
+  numberSeries         VoucherNumberSeries?    @relation(fields: [companyId, numberSeriesId], references: [companyId, id], onDelete: Restrict)
+  createdBy            User?                   @relation("VoucherCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  postedBy             User?                   @relation("VoucherPoster", fields: [postedById], references: [id], onDelete: SetNull)
+  cancelledBy          User?                   @relation("VoucherCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  lines                VoucherLine[]
+  inventoryMovements   InventoryMovement[]
+  ledgerTransactions   LedgerTransaction[]
+  taxTransactions      TaxTransaction[]
+  billWiseEntries      BillWiseEntry[]
+  costAllocations      CostAllocation[]
+  attachments          VoucherAttachment[]
+  approvals            VoucherApprovalAction[]
+  auditEvents          VoucherAuditEvent[]
+  dayBookEntries       DayBookEntry[]
+  salesDocuments       SalesDocument[]
+  purchaseDocuments    PurchaseDocument[]
+  reversalOf           AccountingVoucher?      @relation("VoucherReversal", fields: [companyId, reversalOfId], references: [companyId, id], onDelete: Restrict)
+  reversals            AccountingVoucher[]     @relation("VoucherReversal")
+
+  @@unique([companyId, id])
+  @@unique([companyId, voucherNumber])
+  @@unique([companyId, idempotencyKey])
+  @@unique([companyId, postIdempotencyKey])
+  @@unique([companyId, cancelIdempotencyKey])
+  @@unique([companyId, reversalOfId])
+  @@unique([companyId, paymentReference])
+  @@index([companyId, type, voucherDate])
+  @@index([companyId, status, voucherDate])
+  @@index([companyId, financialYearId, status])
+  @@index([companyId, approvalStatus, createdAt])
+}
+
+model VoucherLine {
+  id               String               @id @default(cuid())
+  companyId        String
+  voucherId        String
+  ledgerId         String
+  lineNumber       Int                  @default(1)
+  description      String?
+  debit            Decimal              @default(0) @db.Decimal(18, 2)
+  credit           Decimal              @default(0) @db.Decimal(18, 2)
+  createdAt        DateTime             @default(now())
+  voucher          AccountingVoucher    @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  ledger           Ledger               @relation(fields: [companyId, ledgerId], references: [companyId, id], onDelete: Restrict)
+  billDetails      BillWiseOpening[]
+  billEntries      BillWiseEntry[]
+  taxDetails       VoucherTaxDetail[]
+  taxTransactions  TaxTransaction[]
+  costAllocations  CostAllocation[]
+  inventoryDetails VoucherStockDetail[]
+  transactions     LedgerTransaction[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, voucherId, lineNumber])
+  @@index([companyId, ledgerId, voucherId])
+  @@index([companyId, voucherId])
+}
+
+model LedgerTransaction {
+  id              String            @id @default(cuid())
+  companyId       String
+  voucherId       String
+  voucherLineId   String
+  ledgerId        String
+  transactionDate DateTime          @db.Date
+  debit           Decimal           @db.Decimal(18, 2)
+  credit          Decimal           @db.Decimal(18, 2)
+  createdAt       DateTime          @default(now())
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher         AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  voucherLine     VoucherLine       @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  ledger          Ledger            @relation(fields: [companyId, ledgerId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, voucherLineId])
+  @@index([companyId, ledgerId, transactionDate, id])
+  @@index([companyId, voucherId])
+}
+
+model VoucherTaxDetail {
+  id            String         @id @default(cuid())
+  companyId     String
+  voucherLineId String
+  taxLedgerId   String
+  taxType       VoucherTaxType
+  taxableAmount Decimal        @db.Decimal(18, 2)
+  taxAmount     Decimal        @db.Decimal(18, 2)
+  rate          Decimal        @db.Decimal(7, 4)
+  line          VoucherLine    @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  taxLedger     Ledger         @relation(fields: [companyId, taxLedgerId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@index([companyId, voucherLineId])
+}
+
+model TaxTransaction {
+  id              String            @id @default(cuid())
+  companyId       String
+  voucherId       String
+  voucherLineId   String
+  ledgerId        String
+  taxType         VoucherTaxType
+  taxableAmount   Decimal           @db.Decimal(18, 2)
+  taxAmount       Decimal           @db.Decimal(18, 2)
+  rate            Decimal           @db.Decimal(7, 4)
+  transactionDate DateTime          @db.Date
+  isReversal      Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher         AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  voucherLine     VoucherLine       @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  ledger          Ledger            @relation(fields: [companyId, ledgerId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, voucherLineId, taxType])
+  @@index([companyId, transactionDate, taxType])
+  @@index([companyId, ledgerId, transactionDate])
+}
+
+model BillWiseEntry {
+  id              String            @id @default(cuid())
+  companyId       String
+  voucherId       String
+  voucherLineId   String
+  settlesEntryId  String?
+  settlesOpeningId String?
+  referenceType   BillReferenceType
+  referenceNumber String?
+  dueDate         DateTime?         @db.Date
+  amount          Decimal           @db.Decimal(18, 2)
+  settledAmount   Decimal           @default(0) @db.Decimal(18, 2)
+  remainingAmount Decimal           @default(0) @db.Decimal(18, 2)
+  createdAt       DateTime          @default(now())
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher         AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  voucherLine     VoucherLine       @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  settlesEntry    BillWiseEntry?    @relation("BillEntrySettlement", fields: [companyId, settlesEntryId], references: [companyId, id], onDelete: Restrict)
+  settlements     BillWiseEntry[]   @relation("BillEntrySettlement")
+  settlesOpening  BillWiseOpening?  @relation("OpeningBillSettlement", fields: [companyId, settlesOpeningId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@index([companyId, referenceNumber])
+  @@index([companyId, dueDate])
+  @@index([companyId, voucherId])
+  @@index([companyId, settlesEntryId])
+  @@index([companyId, settlesOpeningId])
+  @@index([companyId, remainingAmount, dueDate])
+}
+
+model CostCentre {
+  id            String                 @id @default(cuid())
+  companyId     String
+  name          String
+  code          String
+  isActive      Boolean                @default(true)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  allocations   CostAllocation[]
+  purchaseLines PurchaseDocumentLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, isActive, name])
+}
+
+model CostAllocation {
+  id            String            @id @default(cuid())
+  companyId     String
+  voucherId     String
+  voucherLineId String
+  costCentreId  String
+  amount        Decimal           @db.Decimal(18, 2)
+  createdAt     DateTime          @default(now())
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher       AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  voucherLine   VoucherLine       @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  costCentre    CostCentre        @relation(fields: [companyId, costCentreId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@index([companyId, costCentreId, voucherId])
+  @@index([companyId, voucherLineId])
+}
+
+model VoucherStockDetail {
+  id                String                @id @default(cuid())
+  companyId         String
+  voucherLineId     String
+  itemId            String
+  warehouseId       String
+  batchNumber       String?
+  manufacturingDate DateTime?             @db.Date
+  expiryDate        DateTime?             @db.Date
+  movementType      InventoryMovementType
+  direction         InventoryDirection
+  quantity          Decimal               @db.Decimal(18, 6)
+  unitCost          Decimal               @db.Decimal(18, 4)
+  line              VoucherLine           @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  item              StockItem             @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse             @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, voucherLineId])
+  @@index([companyId, itemId, warehouseId])
+}
+
+model VoucherAttachment {
+  id          String            @id @default(cuid())
+  companyId   String
+  voucherId   String
+  objectKey   String
+  url         String
+  fileName    String
+  contentType String
+  byteSize    Int
+  createdById String?
+  createdAt   DateTime          @default(now())
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher     AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  createdBy   User?             @relation("VoucherAttachmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@unique([companyId, objectKey])
+  @@index([companyId, voucherId])
+}
+
+model VoucherApprovalAction {
+  id             String                @id @default(cuid())
+  companyId      String
+  voucherId      String
+  actorId        String
+  decision       VoucherApprovalStatus
+  idempotencyKey String
+  reason         String?
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher        AccountingVoucher     @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  actor          User                  @relation("VoucherApprovalActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, voucherId, createdAt])
+}
+
+model VoucherAuditEvent {
+  id        String             @id @default(cuid())
+  companyId String
+  voucherId String
+  actorId   String?
+  action    VoucherAuditAction
+  snapshot  Json
+  createdAt DateTime           @default(now())
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher   AccountingVoucher  @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  actor     User?              @relation("VoucherAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@index([companyId, voucherId, createdAt])
+}
+
+model DayBookEntry {
+  id            String            @id @default(cuid())
+  companyId     String
+  voucherId     String
+  actorId       String?
+  eventType     DayBookEventType
+  voucherType   VoucherType
+  voucherNumber String
+  voucherDate   DateTime          @db.Date
+  narration     String?
+  createdAt     DateTime          @default(now())
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  voucher       AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  actor         User?             @relation("DayBookActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@index([companyId, voucherDate, voucherType, id])
+  @@index([companyId, eventType, createdAt])
+}
+
+model SalesNumberSeries {
+  id           String            @id @default(cuid())
+  companyId    String
+  documentType SalesDocumentType
+  periodKey    String
+  prefix       String
+  suffix       String            @default("")
+  nextNumber   Int               @default(1)
+  padding      Int               @default(5)
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents    SalesDocument[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentType, periodKey])
+  @@index([companyId, isActive, documentType])
+}
+
+model SalesDocument {
+  id                   String               @id @default(cuid())
+  companyId            String
+  documentNumber       String
+  documentType         SalesDocumentType
+  status               SalesDocumentStatus  @default(DRAFT)
+  partyId              String
+  sourceDocumentId     String?
+  voucherId            String?
+  numberSeriesId       String
+  documentDate         DateTime             @db.Date
+  dueDate              DateTime?            @db.Date
+  validUntil           DateTime?            @db.Date
+  paymentMode          SalesPaymentMode?
+  invoiceNature        SalesInvoiceNature?
+  paymentLedgerId      String?
+  billingAddress       Json
+  shippingAddress      Json
+  companySnapshot      Json
+  partySnapshot        Json
+  notes                String?
+  subtotal             Decimal              @db.Decimal(18, 2)
+  discountAmount       Decimal              @default(0) @db.Decimal(18, 2)
+  freight              Decimal              @default(0) @db.Decimal(18, 2)
+  otherCharges         Decimal              @default(0) @db.Decimal(18, 2)
+  taxableAmount        Decimal              @db.Decimal(18, 2)
+  cgstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  sgstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  utgstAmount          Decimal              @default(0) @db.Decimal(18, 2)
+  igstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  roundOff             Decimal              @default(0) @db.Decimal(18, 2)
+  totalAmount          Decimal              @db.Decimal(18, 2)
+  costOfGoodsSold      Decimal              @default(0) @db.Decimal(18, 2)
+  idempotencyKey       String
+  requestHash          String
+  postIdempotencyKey   String?
+  postRequestHash      String?
+  cancelIdempotencyKey String?
+  cancelRequestHash    String?
+  createdById          String?
+  issuedById           String?
+  issuedAt             DateTime?
+  postedAt             DateTime?
+  cancelledAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  company              Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  party                Party                @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  sourceDocument       SalesDocument?       @relation("SalesDocumentFlow", fields: [companyId, sourceDocumentId], references: [companyId, id], onDelete: Restrict)
+  childDocuments       SalesDocument[]      @relation("SalesDocumentFlow")
+  voucher              AccountingVoucher?   @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  numberSeries         SalesNumberSeries    @relation(fields: [companyId, numberSeriesId], references: [companyId, id], onDelete: Restrict)
+  paymentLedger        Ledger?              @relation("SalesPaymentLedger", fields: [companyId, paymentLedgerId], references: [companyId, id], onDelete: Restrict)
+  createdBy            User?                @relation("SalesDocumentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy             User?                @relation("SalesDocumentIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines                SalesDocumentLine[]
+  events               SalesDocumentEvent[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentNumber])
+  @@unique([companyId, idempotencyKey])
+  @@unique([companyId, voucherId])
+  @@unique([companyId, postIdempotencyKey])
+  @@unique([companyId, cancelIdempotencyKey])
+  @@index([companyId, documentType, status, documentDate])
+  @@index([companyId, partyId, documentDate])
+  @@index([companyId, sourceDocumentId, documentType])
+  @@index([companyId, status, dueDate])
+}
+
+model SalesDocumentLine {
+  id                String              @id @default(cuid())
+  companyId         String
+  documentId        String
+  sourceLineId      String?
+  itemId            String?
+  lineNumber        Int
+  description       String
+  hsnSac            String?
+  unit              String
+  quantity          Decimal             @db.Decimal(18, 6)
+  deliveredQuantity Decimal             @default(0) @db.Decimal(18, 6)
+  invoicedQuantity  Decimal             @default(0) @db.Decimal(18, 6)
+  unitRate          Decimal             @db.Decimal(18, 4)
+  discountPercent   Decimal             @default(0) @db.Decimal(7, 4)
+  discountAmount    Decimal             @default(0) @db.Decimal(18, 2)
+  taxableAmount     Decimal             @db.Decimal(18, 2)
+  gstRate           Decimal             @default(0) @db.Decimal(7, 4)
+  cgstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  sgstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  utgstRate         Decimal             @default(0) @db.Decimal(7, 4)
+  igstRate          Decimal             @default(0) @db.Decimal(7, 4)
+  cgstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  sgstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  utgstAmount       Decimal             @default(0) @db.Decimal(18, 2)
+  igstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  warehouseId       String?
+  batchNumber       String?
+  manufacturingDate DateTime?           @db.Date
+  expiryDate        DateTime?           @db.Date
+  unitCost          Decimal?            @db.Decimal(18, 4)
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document          SalesDocument       @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  item              StockItem?          @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse?          @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  sourceLine        SalesDocumentLine?  @relation("SalesLineFlow", fields: [companyId, sourceLineId], references: [companyId, id], onDelete: Restrict)
+  childLines        SalesDocumentLine[] @relation("SalesLineFlow")
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentId, lineNumber])
+  @@index([companyId, itemId, documentId])
+  @@index([companyId, sourceLineId])
+  @@index([companyId, warehouseId, batchNumber])
+}
+
+model SalesDocumentEvent {
+  id             String                 @id @default(cuid())
+  companyId      String
+  documentId     String
+  actorId        String?
+  eventType      SalesDocumentEventType
+  idempotencyKey String
+  snapshot       Json
+  createdAt      DateTime               @default(now())
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document       SalesDocument          @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  actor          User?                  @relation("SalesDocumentEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, documentId, createdAt])
+  @@index([companyId, eventType, createdAt])
+}
+
+model PurchaseNumberSeries {
+  id           String               @id @default(cuid())
+  companyId    String
+  documentType PurchaseDocumentType
+  periodKey    String
+  prefix       String
+  suffix       String               @default("")
+  nextNumber   Int                  @default(1)
+  padding      Int                  @default(5)
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents    PurchaseDocument[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentType, periodKey])
+  @@index([companyId, isActive, documentType])
+}
+
+model PurchaseDocument {
+  id                    String                  @id @default(cuid())
+  companyId             String
+  documentNumber        String
+  documentType          PurchaseDocumentType
+  status                PurchaseDocumentStatus  @default(DRAFT)
+  partyId               String
+  sourceDocumentId      String?
+  voucherId             String?
+  numberSeriesId        String
+  documentDate          DateTime                @db.Date
+  dueDate               DateTime?               @db.Date
+  supplierInvoiceNumber String?
+  supplierInvoiceDate   DateTime?               @db.Date
+  paymentMode           PurchasePaymentMode?
+  paymentLedgerId       String?
+  companySnapshot       Json
+  partySnapshot         Json
+  notes                 String?
+  subtotal              Decimal                 @db.Decimal(18, 2)
+  discountAmount        Decimal                 @default(0) @db.Decimal(18, 2)
+  freight               Decimal                 @default(0) @db.Decimal(18, 2)
+  otherCharges          Decimal                 @default(0) @db.Decimal(18, 2)
+  taxableAmount         Decimal                 @db.Decimal(18, 2)
+  cgstAmount            Decimal                 @default(0) @db.Decimal(18, 2)
+  sgstAmount            Decimal                 @default(0) @db.Decimal(18, 2)
+  utgstAmount           Decimal                 @default(0) @db.Decimal(18, 2)
+  igstAmount            Decimal                 @default(0) @db.Decimal(18, 2)
+  roundOff              Decimal                 @default(0) @db.Decimal(18, 2)
+  totalAmount           Decimal                 @db.Decimal(18, 2)
+  idempotencyKey        String
+  requestHash           String
+  postIdempotencyKey    String?
+  postRequestHash       String?
+  cancelIdempotencyKey  String?
+  cancelRequestHash     String?
+  createdById           String?
+  issuedById            String?
+  issuedAt              DateTime?
+  postedAt              DateTime?
+  cancelledAt           DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  company               Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  party                 Party                   @relation(fields: [companyId, partyId], references: [companyId, id], onDelete: Restrict)
+  sourceDocument        PurchaseDocument?       @relation("PurchaseDocumentFlow", fields: [companyId, sourceDocumentId], references: [companyId, id], onDelete: Restrict)
+  childDocuments        PurchaseDocument[]      @relation("PurchaseDocumentFlow")
+  voucher               AccountingVoucher?      @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  numberSeries          PurchaseNumberSeries    @relation(fields: [companyId, numberSeriesId], references: [companyId, id], onDelete: Restrict)
+  paymentLedger         Ledger?                 @relation("PurchasePaymentLedger", fields: [companyId, paymentLedgerId], references: [companyId, id], onDelete: Restrict)
+  createdBy             User?                   @relation("PurchaseDocumentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  issuedBy              User?                   @relation("PurchaseDocumentIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  lines                 PurchaseDocumentLine[]
+  events                PurchaseDocumentEvent[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentNumber])
+  @@unique([companyId, idempotencyKey])
+  @@unique([companyId, voucherId])
+  @@unique([companyId, postIdempotencyKey])
+  @@unique([companyId, cancelIdempotencyKey])
+  @@unique([companyId, partyId, supplierInvoiceNumber])
+  @@index([companyId, documentType, status, documentDate])
+  @@index([companyId, partyId, documentDate])
+  @@index([companyId, sourceDocumentId, documentType])
+  @@index([companyId, status, dueDate])
+}
+
+model PurchaseDocumentLine {
+  id                String                 @id @default(cuid())
+  companyId         String
+  documentId        String
+  sourceLineId      String?
+  itemId            String?
+  costCentreId      String?
+  lineNumber        Int
+  description       String
+  hsnSac            String?
+  unit              String
+  quantity          Decimal                @db.Decimal(18, 6)
+  receivedQuantity  Decimal                @default(0) @db.Decimal(18, 6)
+  invoicedQuantity  Decimal                @default(0) @db.Decimal(18, 6)
+  unitRate          Decimal                @db.Decimal(18, 4)
+  discountPercent   Decimal                @default(0) @db.Decimal(7, 4)
+  discountAmount    Decimal                @db.Decimal(18, 2)
+  taxableAmount     Decimal                @db.Decimal(18, 2)
+  gstRate           Decimal                @default(0) @db.Decimal(7, 4)
+  cgstRate          Decimal                @default(0) @db.Decimal(7, 4)
+  sgstRate          Decimal                @default(0) @db.Decimal(7, 4)
+  utgstRate         Decimal                @default(0) @db.Decimal(7, 4)
+  igstRate          Decimal                @default(0) @db.Decimal(7, 4)
+  cgstAmount        Decimal                @default(0) @db.Decimal(18, 2)
+  sgstAmount        Decimal                @default(0) @db.Decimal(18, 2)
+  utgstAmount       Decimal                @default(0) @db.Decimal(18, 2)
+  igstAmount        Decimal                @default(0) @db.Decimal(18, 2)
+  warehouseId       String?
+  batchNumber       String?
+  manufacturingDate DateTime?              @db.Date
+  expiryDate        DateTime?              @db.Date
+  unitCost          Decimal?               @db.Decimal(18, 4)
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document          PurchaseDocument       @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  item              StockItem?             @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse?             @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  costCentre        CostCentre?            @relation(fields: [companyId, costCentreId], references: [companyId, id], onDelete: Restrict)
+  sourceLine        PurchaseDocumentLine?  @relation("PurchaseLineFlow", fields: [companyId, sourceLineId], references: [companyId, id], onDelete: Restrict)
+  childLines        PurchaseDocumentLine[] @relation("PurchaseLineFlow")
+
+  @@unique([companyId, id])
+  @@unique([companyId, documentId, lineNumber])
+  @@index([companyId, itemId, documentId])
+  @@index([companyId, sourceLineId])
+  @@index([companyId, warehouseId, batchNumber])
+  @@index([companyId, costCentreId])
+}
+
+model PurchaseDocumentEvent {
+  id             String                    @id @default(cuid())
+  companyId      String
+  documentId     String
+  actorId        String?
+  eventType      PurchaseDocumentEventType
+  idempotencyKey String
+  snapshot       Json
+  createdAt      DateTime                  @default(now())
+  company        Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  document       PurchaseDocument          @relation(fields: [companyId, documentId], references: [companyId, id], onDelete: Restrict)
+  actor          User?                     @relation("PurchaseDocumentEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, id])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, documentId, createdAt])
+  @@index([companyId, eventType, createdAt])
+}
+
+model BillWiseOpening {
+  id              String      @id @default(cuid())
+  companyId       String
+  voucherLineId   String
+  referenceNumber String
+  dueDate         DateTime    @db.Date
+  amount          Decimal     @db.Decimal(18, 2)
+  settledAmount   Decimal     @default(0) @db.Decimal(18, 2)
+  remainingAmount Decimal     @default(0) @db.Decimal(18, 2)
+  createdAt       DateTime    @default(now())
+  voucherLine     VoucherLine @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  settlements     BillWiseEntry[] @relation("OpeningBillSettlement")
+
+  @@unique([companyId, id])
+  @@unique([companyId, voucherLineId, referenceNumber])
+  @@index([companyId, dueDate])
+  @@index([companyId, remainingAmount, dueDate])
+}
+
+model StockGroup {
+  id          String       @id @default(cuid())
+  companyId   String
+  parentId    String?
+  name        String
+  code        String
+  description String?
+  isSystem    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent      StockGroup?  @relation("StockGroupTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children    StockGroup[] @relation("StockGroupTree")
+  items       StockItem[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId])
+}
+
+model UnitOfMeasure {
+  id              String               @id @default(cuid())
+  companyId       String
+  name            String
+  symbol          String
+  precision       Int                  @default(3)
+  isSystem        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversions     UnitConversion[]     @relation("UnitConversionFrom")
+  convertedTo     UnitConversion[]     @relation("UnitConversionTo")
+  itemBaseUnits   StockItem[]          @relation("ItemBaseUnit")
+  itemConversions ItemUnitConversion[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, symbol])
+  @@index([companyId, name])
+}
+
+model UnitConversion {
+  id         String        @id @default(cuid())
+  companyId  String
+  fromUnitId String
+  toUnitId   String
+  factor     Decimal       @db.Decimal(18, 8)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromUnit   UnitOfMeasure @relation("UnitConversionFrom", fields: [companyId, fromUnitId], references: [companyId, id], onDelete: Restrict)
+  toUnit     UnitOfMeasure @relation("UnitConversionTo", fields: [companyId, toUnitId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, fromUnitId, toUnitId])
+  @@index([companyId, toUnitId])
+}
+
+model ItemUnitConversion {
+  id           String        @id @default(cuid())
+  companyId    String
+  itemId       String
+  unitId       String
+  baseQuantity Decimal       @db.Decimal(18, 8)
+  barcode      String?
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item         StockItem     @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Cascade)
+  unit         UnitOfMeasure @relation(fields: [companyId, unitId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, itemId, unitId])
+  @@unique([companyId, barcode])
+  @@index([companyId, unitId])
+}
+
+model Warehouse {
+  id                    String                 @id @default(cuid())
+  companyId             String
+  parentId              String?
+  name                  String
+  code                  String
+  address               String?
+  isSystem              Boolean                @default(false)
+  isActive              Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent                Warehouse?             @relation("WarehouseTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children              Warehouse[]            @relation("WarehouseTree")
+  balances              StockBalance[]
+  movements             InventoryMovement[]
+  batches               InventoryBatch[]
+  voucherStockDetails   VoucherStockDetail[]
+  salesDocumentLines    SalesDocumentLine[]
+  purchaseDocumentLines PurchaseDocumentLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@index([companyId, parentId, isActive])
+}
+
+model StockItem {
+  id                    String                 @id @default(cuid())
+  companyId             String
+  groupId               String
+  baseUnitId            String
+  name                  String
+  code                  String?
+  hsnSac                String?
+  gstRate               Decimal                @default(0) @db.Decimal(5, 2)
+  purchaseRate          Decimal                @default(0) @db.Decimal(18, 4)
+  salesRate             Decimal                @default(0) @db.Decimal(18, 4)
+  mrp                   Decimal?               @db.Decimal(18, 4)
+  reorderLevel          Decimal                @default(0) @db.Decimal(18, 6)
+  minimumLevel          Decimal                @default(0) @db.Decimal(18, 6)
+  maximumLevel          Decimal?               @db.Decimal(18, 6)
+  batchTracked          Boolean                @default(false)
+  barcode               String?
+  isActive              Boolean                @default(true)
+  creationKey           String
+  creationHash          String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  group                 StockGroup             @relation(fields: [companyId, groupId], references: [companyId, id], onDelete: Restrict)
+  baseUnit              UnitOfMeasure          @relation("ItemBaseUnit", fields: [companyId, baseUnitId], references: [companyId, id], onDelete: Restrict)
+  alternateUnits        ItemUnitConversion[]
+  batches               InventoryBatch[]
+  balances              StockBalance[]
+  movements             InventoryMovement[]
+  voucherStockDetails   VoucherStockDetail[]
+  salesDocumentLines    SalesDocumentLine[]
+  purchaseDocumentLines PurchaseDocumentLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@unique([companyId, code])
+  @@unique([companyId, barcode])
+  @@unique([companyId, creationKey])
+  @@index([companyId, groupId, isActive, name])
+  @@index([companyId, baseUnitId])
+  @@index([companyId, hsnSac])
+  @@index([companyId, batchTracked, isActive])
+}
+
+model InventoryBatch {
+  id                String              @id @default(cuid())
+  companyId         String
+  itemId            String
+  warehouseId       String
+  batchNumber       String
+  manufacturingDate DateTime?           @db.Date
+  expiryDate        DateTime?           @db.Date
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item              StockItem           @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse         Warehouse           @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  balances          StockBalance[]
+  movements         InventoryMovement[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, itemId, warehouseId, batchNumber])
+  @@index([companyId, itemId, expiryDate])
+  @@index([companyId, warehouseId, expiryDate])
+}
+
+model StockBalance {
+  id          String          @id @default(cuid())
+  companyId   String
+  itemId      String
+  warehouseId String
+  batchId     String?
+  locationKey String
+  quantity    Decimal         @default(0) @db.Decimal(18, 6)
+  value       Decimal         @default(0) @db.Decimal(18, 4)
+  updatedAt   DateTime        @updatedAt
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item        StockItem       @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse   Warehouse       @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  batch       InventoryBatch? @relation(fields: [companyId, batchId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, itemId, warehouseId, locationKey])
+  @@index([companyId, warehouseId, itemId])
+  @@index([companyId, itemId, quantity])
+}
+
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  companyId      String
+  itemId         String
+  warehouseId    String
+  batchId        String?
+  voucherId      String?
+  movementType   InventoryMovementType
+  direction      InventoryDirection
+  quantity       Decimal               @db.Decimal(18, 6)
+  unitCost       Decimal               @db.Decimal(18, 4)
+  value          Decimal               @db.Decimal(18, 4)
+  movementDate   DateTime              @db.Date
+  idempotencyKey String
+  requestHash    String
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  item           StockItem             @relation(fields: [companyId, itemId], references: [companyId, id], onDelete: Restrict)
+  warehouse      Warehouse             @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  batch          InventoryBatch?       @relation(fields: [companyId, batchId], references: [companyId, id], onDelete: Restrict)
+  voucher        AccountingVoucher?    @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+  createdBy      User?                 @relation("InventoryMovementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, itemId, movementDate, id])
+  @@index([companyId, warehouseId, movementDate])
+  @@index([companyId, batchId, movementDate])
+  @@index([companyId, voucherId])
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  userId    String
+  companyId String
+  status    MembershipStatus @default(ACTIVE)
+  isDefault Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles     MembershipRole[]
+
+  @@unique([userId, companyId])
+  @@index([companyId, status])
+  @@index([userId, status])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  memberships MembershipRole[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  resource    String
+  action      String
+  description String?
+  roles       RolePermission[]
+
+  @@unique([resource, action])
+  @@index([resource])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model MembershipRole {
+  membershipId String
+  roleId       String
+  createdAt    DateTime   @default(now())
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, roleId])
+  @@index([roleId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  companyId  String
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  changes    Json?
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model OtpChallenge {
+  id         String     @id @default(cuid())
+  userId     String
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@index([expiresAt])
+}
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  companyId String?
+  count     Int      @default(1)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([resetAt])
+}
+
+model LoginHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  ipAddress String?
+  userAgent String?
+  success   Boolean
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AuthSession {
+  id        String    @id @default(cuid())
+  tokenId   String    @unique
+  userId    String
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, revokedAt])
+}
