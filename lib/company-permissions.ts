@@ -50,6 +50,12 @@ export const COMPANY_PERMISSION_CATALOG = [
   { resource: "sales", action: "cancel", label: "Cancel sales documents" },
   { resource: "sales", action: "send", label: "Send sales documents to customers" },
   { resource: "sales-reports", action: "read", label: "View sales registers and profitability reports" },
+  { resource: "purchases", action: "read", label: "View purchase documents and supplier balances" },
+  { resource: "purchases", action: "create", label: "Create purchase orders and invoices" },
+  { resource: "purchases", action: "issue", label: "Issue purchase orders" },
+  { resource: "purchases", action: "post", label: "Post receipts, purchase invoices and returns" },
+  { resource: "purchases", action: "cancel", label: "Cancel or reverse purchase documents" },
+  { resource: "purchase-reports", action: "read", label: "View purchase register and analysis" },
 ] as const;
 
 export const OWNER_PERMISSIONS = COMPANY_PERMISSION_CATALOG.map(
