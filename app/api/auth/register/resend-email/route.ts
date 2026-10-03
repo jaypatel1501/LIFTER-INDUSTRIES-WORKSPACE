@@ -7,7 +7,6 @@ import { createOpaqueToken, hashSecret } from "@/lib/security";
 import { emailSchema } from "@/lib/validation/auth";
 import { sendRegistrationVerificationEmail } from "@/lib/email";
 import { getVerificationUrl, REGISTRATION_LIFETIME_MS } from "@/lib/registration";
-import { ValidationError } from "@/lib/errors";
 
 export async function POST(request: Request) {
   try {
@@ -39,11 +38,7 @@ export async function POST(request: Request) {
         },
       });
     });
-    try {
-      await sendRegistrationVerificationEmail(attempt.email, getVerificationUrl(token), attempt.name ?? undefined);
-    } catch {
-      throw new ValidationError("Email verification service is not configured for this environment.");
-    }
+    await sendRegistrationVerificationEmail(attempt.email, getVerificationUrl(token), attempt.name ?? undefined);
     return successResponse({ message: "A new verification email has been sent." }, 202);
   } catch (error) {
     return errorResponse(error);

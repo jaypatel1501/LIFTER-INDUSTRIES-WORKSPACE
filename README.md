@@ -5,6 +5,7 @@ Enterprise-oriented Indian business ERP foundation built on Next.js App Router, 
 ## Foundation
 
 - Auth.js JWT sessions with bcrypt-backed email/password sign-in, mobile OTP adapter, account lockout, password reset, and session revocation after password reset.
+- Existing SMTP email service for registration verification, verification resend, password reset and company invitations; configure `EMAIL_SERVER` and `EMAIL_FROM` in Vercel Production.
 - Company-scoped membership, company roles, global permission catalog and reusable RBAC/tenant guards.
 - Company profile administration (GSTIN/PAN, registered address and contacts, GST state, financial-year settings and private object-storage logo), annual books periods, user invitations and membership activation/suspension.
 - Tenant-scoped customer/supplier masters with GSTIN/PAN, addresses, contact and credit terms; linked party ledgers and bill-wise opening balances posted through immutable, idempotent double-entry vouchers.

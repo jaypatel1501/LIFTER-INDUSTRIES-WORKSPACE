@@ -1,20 +1,16 @@
+import { SMTPClient } from "emailjs";
 import { env, requireEnv } from "@/lib/env";
-
-type EmailSenderConfig = {
-  provider: "resend" | "smtp";
-  from: string;
-  fromName?: string | undefined;
-  server?: string | undefined;
-};
+import { EmailConfigurationError } from "@/lib/errors";
 
 export function requireEmailConfiguration() {
-  const provider = env.EMAIL_PROVIDER ?? (env.RESEND_API_KEY ? "resend" : env.EMAIL_SERVER ? "smtp" : "resend");
-  const from = requireEnv("EMAIL_FROM");
+  const missingVariables = (["EMAIL_SERVER", "EMAIL_FROM"] as const)
+    .filter((key) => !env[key]);
+  if (missingVariables.length > 0) {
+    throw new EmailConfigurationError(missingVariables);
+  }
   return {
-    provider,
-    from,
-    fromName: env.EMAIL_FROM_NAME,
-    server: provider === "smtp" ? requireEnv("EMAIL_SERVER") : undefined,
+    server: requireEnv("EMAIL_SERVER"),
+    from: requireEnv("EMAIL_FROM"),
   };
 }
 
@@ -67,58 +63,27 @@ export async function sendSalesDocumentEmail(
 }
 
 async function sendMail(to: string, subject: string, text: string, html: string) {
-  const configuration: EmailSenderConfig = requireEmailConfiguration();
-
-  if (configuration.provider === "resend") {
-    const apiKey = requireEnv("RESEND_API_KEY");
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: configuration.fromName ? `${configuration.fromName} <${configuration.from}>` : configuration.from,
-        to: [to],
-        subject,
-        text,
-        html,
-      }),
+  const configuration = requireEmailConfiguration();
+  const server = new URL(configuration.server);
+  const secure = server.protocol === "smtps:";
+  const client = new SMTPClient({
+    host: server.hostname,
+    port: Number(server.port) || (secure ? 465 : 587),
+    ...(server.username ? { user: decodeURIComponent(server.username) } : {}),
+    ...(server.password ? { password: decodeURIComponent(server.password) } : {}),
+    ssl: secure,
+    tls: !secure,
+    timeout: 10_000,
+  });
+  try {
+    await client.sendAsync({
+      from: configuration.from,
+      to,
+      subject,
+      text,
+      html,
     });
-
-    if (!response.ok) {
-      const errorDetails = await response.text();
-      throw new Error(`Resend email delivery failed (${response.status}): ${errorDetails.slice(0, 500)}`);
-    }
-    return;
+  } finally {
+    client.smtp.close();
   }
-
-  if (configuration.provider === "smtp") {
-    const { SMTPClient } = await import("emailjs");
-    const server = new URL(requireEnv("EMAIL_SERVER"));
-    const secure = server.protocol === "smtps:";
-    const client = new SMTPClient({
-      host: server.hostname,
-      port: Number(server.port) || (secure ? 465 : 587),
-      ...(server.username ? { user: decodeURIComponent(server.username) } : {}),
-      ...(server.password ? { password: decodeURIComponent(server.password) } : {}),
-      ssl: secure,
-      tls: !secure,
-      timeout: 10_000,
-    });
-    try {
-      await client.sendAsync({
-        from: configuration.from,
-        to,
-        subject,
-        text,
-        html,
-      });
-    } finally {
-      client.smtp.close();
-    }
-    return;
-  }
-
-  throw new Error(`Unsupported email provider: ${configuration.provider}`);
 }

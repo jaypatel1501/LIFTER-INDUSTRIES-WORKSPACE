@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { ConflictError, ValidationError } from "@/lib/errors";
+import { ConflictError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { errorResponse, successResponse } from "@/lib/api-response";
 import { requestIp, requestUserAgent, readJson } from "@/lib/request";
@@ -86,11 +86,7 @@ export async function POST(request: Request) {
       return candidate;
     });
 
-    try {
-      await sendRegistrationVerificationEmail(email, getVerificationUrl(token), input.name);
-    } catch {
-      throw new ValidationError("Email verification service is not configured for this environment.");
-    }
+    await sendRegistrationVerificationEmail(email, getVerificationUrl(token), input.name);
 
     return successResponse({
       message: "Check your email to verify your account.",

@@ -50,3 +50,14 @@ export class ValidationError extends AppError {
     this.name = "ValidationError";
   }
 }
+
+export class EmailConfigurationError extends AppError {
+  constructor(missingVariables: string[]) {
+    super(
+      `Email service configuration is incomplete. Set: ${missingVariables.join(", ")}`,
+      503,
+      "EMAIL_CONFIGURATION_MISSING",
+    );
+    this.name = "EmailConfigurationError";
+  }
+}
