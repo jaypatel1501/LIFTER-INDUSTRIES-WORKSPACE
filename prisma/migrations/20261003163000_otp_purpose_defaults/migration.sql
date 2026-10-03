@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "MobileOtp" ALTER COLUMN "purpose" SET DEFAULT 'REGISTRATION';

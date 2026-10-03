@@ -30,6 +30,7 @@ const envSchema = z.object({
     "EMAIL_SERVER must use smtp:// or smtps://",
   ).optional(),
   EMAIL_FROM: z.string().email().optional(),
+  DEV_OTP_MODE: z.string().optional().transform((value) => value === "true").default(false),
   GST_API_BASE_URL: optionalHttpsUrl,
   GST_API_CLIENT_ID: z.string().optional(),
   GST_API_CLIENT_SECRET: z.string().optional(),

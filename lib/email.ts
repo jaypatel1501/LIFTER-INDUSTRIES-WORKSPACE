@@ -17,6 +17,15 @@ export async function sendPasswordResetEmail(to: string, url: string) {
   );
 }
 
+export async function sendRegistrationVerificationEmail(to: string, url: string) {
+  await sendMail(
+    to,
+    "Verify your ERP System account",
+    `Use this secure link to verify your email and continue onboarding. It expires in 30 minutes: ${url}`,
+    `<p>Use this secure link to verify your email and continue onboarding.</p><p><a href="${url}">Verify email</a></p>`,
+  );
+}
+
 export async function sendCompanyInvitationEmail(
   to: string,
   companyName: string,

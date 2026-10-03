@@ -22,6 +22,52 @@ enum MembershipStatus {
 
 enum OtpPurpose {
   LOGIN
+  REGISTRATION
+  PASSWORD_RESET
+  MOBILE_CHANGE
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  EMAIL_VERIFICATION_PENDING
+  MOBILE_VERIFICATION_PENDING
+  COMPANY_SETUP_PENDING
+  COMPANY_INVITATION_PENDING
+  COMPLETED
+}
+
+enum PreferredLanguage {
+  ENGLISH
+  HINDI
+  BILINGUAL
+}
+
+enum RegistrationAttemptStatus {
+  STARTED
+  EMAIL_VERIFIED
+  MOBILE_VERIFIED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum OnboardingPath {
+  CREATE_COMPANY
+  JOIN_COMPANY
+}
+
+enum CompanyInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
 }
 
 enum FinancialYearStatus {
@@ -232,14 +278,22 @@ model User {
   normalizedEmail          String                  @unique
   name                     String?
   mobile                   String?                 @unique
+  mobileNumber             String?                 @unique
+  normalizedMobileNumber   String?                 @unique
   passwordHash             String
   locale                   Locale                  @default(EN)
   emailVerifiedAt          DateTime?
+  mobileVerifiedAt         DateTime?
+  status                  UserStatus              @default(PENDING)
+  onboardingStatus        OnboardingStatus       @default(NOT_STARTED)
+  preferredLanguage       PreferredLanguage       @default(ENGLISH)
   failedLoginCount         Int                     @default(0)
   lockedUntil              DateTime?
+  lastLoginAt              DateTime?
   sessionVersion           Int                     @default(0)
   createdAt                DateTime                @default(now())
   updatedAt                DateTime                @updatedAt
+  deletedAt                DateTime?
   memberships              Membership[]
   resetTokens              PasswordResetToken[]
   otpChallenges            OtpChallenge[]
@@ -260,8 +314,123 @@ model User {
   purchaseDocumentsCreated PurchaseDocument[]      @relation("PurchaseDocumentCreator")
   purchaseDocumentsIssued  PurchaseDocument[]      @relation("PurchaseDocumentIssuer")
   purchaseDocumentEvents   PurchaseDocumentEvent[] @relation("PurchaseDocumentEventActor")
+  emailVerificationTokens  EmailVerificationToken[]
+  mobileOtps               MobileOtp[]
+  registrationAttempts     RegistrationAttempt[]   @relation("RegistrationCreatedUser")
+  termsAcceptances         TermsAcceptance[]
+  createdInvitations       CompanyInvitation[]     @relation("InvitationCreatedBy")
+  acceptedInvitations      CompanyInvitation[]     @relation("InvitationAcceptedBy")
 
   @@index([mobile])
+  @@index([normalizedEmail])
+  @@index([normalizedMobileNumber])
+  @@index([status, onboardingStatus])
+}
+
+model EmailVerificationToken {
+  id                   String              @id @default(cuid())
+  userId               String?
+  registrationAttemptId String?
+  tokenHash            String              @unique
+  expiresAt            DateTime
+  consumedAt            DateTime?
+  createdAt             DateTime            @default(now())
+  requestIp             String?
+  userAgent            String?
+  user                 User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registrationAttempt  RegistrationAttempt? @relation(fields: [registrationAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([registrationAttemptId, expiresAt])
+}
+
+model MobileOtp {
+  id                   String              @id @default(cuid())
+  userId               String?
+  registrationAttemptId String?
+  mobileNumber         String
+  otpHash              String
+  purpose              OtpPurpose          @default(REGISTRATION)
+  expiresAt            DateTime
+  attemptCount         Int                 @default(0)
+  maxAttempts          Int                 @default(5)
+  consumedAt           DateTime?
+  createdAt            DateTime            @default(now())
+  requestIp            String?
+  userAgent            String?
+  user                 User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registrationAttempt  RegistrationAttempt? @relation(fields: [registrationAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@index([registrationAttemptId, purpose, createdAt])
+}
+
+model RegistrationAttempt {
+  id                    String               @id @default(cuid())
+  email                 String
+  mobileNumber          String
+  name                  String
+  passwordHash          String
+  preferredLanguage     PreferredLanguage    @default(ENGLISH)
+  emailVerifiedAt       DateTime?
+  mobileVerifiedAt      DateTime?
+  expiresAt             DateTime
+  status                RegistrationAttemptStatus @default(STARTED)
+  selectedOnboardingPath OnboardingPath?
+  createdUserId         String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  requestIp             String?
+  createdUser           User?                @relation("RegistrationCreatedUser", fields: [createdUserId], references: [id], onDelete: SetNull)
+  emailVerificationTokens EmailVerificationToken[]
+  mobileOtps            MobileOtp[]
+  termsAcceptances      TermsAcceptance[]
+
+  @@index([email])
+  @@index([mobileNumber])
+  @@index([status])
+  @@index([createdUserId])
+}
+
+model CompanyInvitation {
+  id                  String                  @id @default(cuid())
+  companyId           String
+  invitedEmail        String
+  invitedMobileNumber String?
+  invitedName         String?
+  roleId              String?
+  invitationTokenHash String                 @unique
+  status              CompanyInvitationStatus @default(PENDING)
+  expiresAt           DateTime
+  invitedByUserId     String
+  acceptedByUserId    String?
+  acceptedAt          DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  company             Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role                Role?                   @relation("InvitationRole", fields: [roleId], references: [id], onDelete: SetNull)
+  invitedByUser       User                    @relation("InvitationCreatedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  acceptedByUser      User?                   @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([invitedEmail])
+  @@index([invitedByUserId])
+}
+
+model TermsAcceptance {
+  id                   String             @id @default(cuid())
+  userId               String?
+  registrationAttemptId String?
+  termsVersion         String
+  privacyVersion       String
+  acceptedAt           DateTime           @default(now())
+  ipAddress            String?
+  userAgent            String?
+  user                 User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registrationAttempt  RegistrationAttempt? @relation(fields: [registrationAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([userId, acceptedAt])
+  @@index([registrationAttemptId])
 }
 
 model Company {
@@ -289,6 +458,7 @@ model Company {
   updatedAt               DateTime                @updatedAt
   memberships             Membership[]
   roles                   Role[]
+  invitations            CompanyInvitation[]
   financialYears          FinancialYear[]
   auditLogs               AuditLog[]
   rateLimits              RateLimit[]
@@ -1351,6 +1521,7 @@ model Role {
   company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   permissions RolePermission[]
   memberships MembershipRole[]
+  invitations CompanyInvitation[] @relation("InvitationRole")
 
   @@unique([companyId, name])
   @@index([companyId])

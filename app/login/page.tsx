@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { LoginForm } from "@/components/auth/login-form";
@@ -30,6 +31,12 @@ export default async function LoginPage() {
           <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Welcome back</h2>
           <p className="mt-2 text-sm text-slate-600">Sign in to continue to your company workspace.</p>
           <div className="mt-8"><LoginForm /></div>
+          <div className="mt-6 flex flex-col gap-2 text-center text-sm">
+            <Link href="/register" className="font-medium text-blue-700 hover:underline">Create a new account</Link>
+            <Link href="/register" className="font-medium text-blue-700 hover:underline">Register</Link>
+            <Link href="/register/join-company" className="font-medium text-blue-700 hover:underline">Join Company</Link>
+            <p className="text-slate-500">Already have an account? <Link href="/login" className="font-medium text-blue-700 hover:underline">Sign in</Link></p>
+          </div>
           <p className="mt-8 text-center text-xs leading-5 text-slate-500">Access is provisioned by your organization administrator.</p>
         </div>
       </section>

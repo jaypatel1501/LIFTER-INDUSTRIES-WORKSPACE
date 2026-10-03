@@ -30,6 +30,15 @@ class HttpSmsAdapter implements SmsAdapter {
 }
 
 export function createSmsAdapter(): SmsAdapter {
+  if (env.NODE_ENV !== "production" && env.DEV_OTP_MODE) {
+    return {
+      async send(...args: [string, string]) {
+        void args[0];
+        void args[1];
+        // Local-only OTP testing is intentionally disabled by default; this stub is used only with explicit DEV_OTP_MODE=true.
+      },
+    };
+  }
   const provider = env.SMS_PROVIDER;
   if (!provider) throw new Error("SMS_PROVIDER is required to send OTP messages");
   return new HttpSmsAdapter(provider);
