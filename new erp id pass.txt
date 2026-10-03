@@ -2,3 +2,7 @@ new erp id pass:
 
 ID: admin@example.com
 Pass: J9512068953p@
+
+
+SEED_ADMIN_EMAIL="admin@example.com"
+SEED_ADMIN_PASSWORD="J9512068953p@"
