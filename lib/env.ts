@@ -17,6 +17,9 @@ const envSchema = z.object({
   AUTH_URL: optionalUrl,
   NEXT_PUBLIC_APP_URL: optionalUrl,
   NEXT_PUBLIC_APP_NAME: z.string().default("ERP System"),
+  EMAIL_PROVIDER: z.enum(["resend", "smtp"]).optional(),
+  EMAIL_FROM_NAME: z.string().min(1).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
   SMS_PROVIDER: z.enum(["twilio", "exotel", "msg91"]).optional(),
   SMS_API_KEY: z.string().min(1).optional(),
@@ -87,7 +90,23 @@ const envSchema = z.object({
       message: "SMS_API_KEY, SMS_SENDER_ID, and SMS_API_URL are required when SMS_PROVIDER is set",
     });
   }
-  if (Boolean(values.EMAIL_SERVER) !== Boolean(values.EMAIL_FROM)) {
+  const configuredProvider = values.EMAIL_PROVIDER ?? (values.RESEND_API_KEY ? "resend" : values.EMAIL_SERVER ? "smtp" : undefined);
+
+  if (configuredProvider === "resend" && (!values.RESEND_API_KEY || !values.EMAIL_FROM)) {
+    context.addIssue({
+      code: "custom",
+      path: ["EMAIL_FROM"],
+      message: "EMAIL_FROM and RESEND_API_KEY are required when EMAIL_PROVIDER is resend",
+    });
+  }
+  if (configuredProvider === "smtp" && (!values.EMAIL_SERVER || !values.EMAIL_FROM)) {
+    context.addIssue({
+      code: "custom",
+      path: ["EMAIL_FROM"],
+      message: "EMAIL_SERVER and EMAIL_FROM are required when EMAIL_PROVIDER is smtp",
+    });
+  }
+  if (values.EMAIL_PROVIDER === "smtp" && Boolean(values.EMAIL_SERVER) !== Boolean(values.EMAIL_FROM)) {
     context.addIssue({
       code: "custom",
       path: ["EMAIL_FROM"],

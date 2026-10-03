@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const attempt = await prisma.registrationAttempt.findFirst({
       where: { email: input.email, status: { in: ["STARTED", "EMAIL_VERIFIED"] } },
       orderBy: { createdAt: "desc" },
-      select: { id: true, email: true, emailVerifiedAt: true },
+      select: { id: true, email: true, name: true, emailVerifiedAt: true },
     });
     if (!attempt || attempt.emailVerifiedAt) {
       return successResponse({ message: "If the email is registered, a new verification link has been sent." }, 202);
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       });
     });
     try {
-      await sendRegistrationVerificationEmail(attempt.email, getVerificationUrl(token));
+      await sendRegistrationVerificationEmail(attempt.email, getVerificationUrl(token), attempt.name ?? undefined);
     } catch {
       throw new ValidationError("Email verification service is not configured for this environment.");
     }

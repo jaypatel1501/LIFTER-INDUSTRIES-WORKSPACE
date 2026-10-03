@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     });
 
     try {
-      await sendRegistrationVerificationEmail(email, getVerificationUrl(token));
+      await sendRegistrationVerificationEmail(email, getVerificationUrl(token), input.name);
     } catch {
       throw new ValidationError("Email verification service is not configured for this environment.");
     }
