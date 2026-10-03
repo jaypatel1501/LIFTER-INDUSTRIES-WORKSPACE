@@ -62,7 +62,7 @@ export async function PATCH(request: Request, route: RouteContext) {
     return successResponse({ voucher });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return errorResponse(new ConflictError("Voucher metadata conflicts with an existing number or attachment"));
+      return errorResponse(new ConflictError("Voucher metadata conflicts with an existing number, payment reference or attachment"));
     }
     return errorResponse(error);
   }

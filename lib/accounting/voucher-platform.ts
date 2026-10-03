@@ -14,6 +14,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashIdempotencyKey } from "@/lib/idempotency";
 import { postInventoryMovement } from "@/lib/inventory/post-movement";
+import { applyBillSettlements, validateBillAllocations } from "@/lib/accounting/outstanding";
 import { assertBalancedVoucher } from "@/lib/accounting/voucher-validation";
 import { withTransaction } from "@/lib/transactions";
 import type { voucherDraftSchema } from "@/lib/validation/vouchers";
@@ -32,6 +33,9 @@ const PREFIXES: Record<VoucherType, string> = {
   PAYMENT: "PAY",
   RECEIPT: "REC",
   CONTRA: "CON",
+  SALES_RETURN: "SR",
+  CREDIT_NOTE: "CN",
+  DEBIT_NOTE: "DN",
 };
 
 function requestHash(value: unknown) {
@@ -186,7 +190,7 @@ async function validateCompanyLines(
   const ledgerIds = [...new Set(lines.map(({ ledgerId }) => ledgerId))];
   const ledgers = await tx.ledger.findMany({
     where: { companyId, id: { in: ledgerIds }, isActive: true },
-    select: { id: true, costCentreEnabled: true },
+    select: { id: true, type: true, costCentreEnabled: true, party: { select: { type: true } } },
   });
   if (ledgers.length !== ledgerIds.length) {
     throw new NotFoundError("Every voucher ledger must be active in the current company");
@@ -205,6 +209,18 @@ async function validateCompanyLines(
   for (const line of lines) {
     if (line.costAllocations.length && !byId.get(line.ledgerId)?.costCentreEnabled) {
       throw new ValidationError("Cost allocations require a ledger configured for cost centres");
+    }
+    if (line.bills.length && !byId.get(line.ledgerId)?.party) {
+      throw new ValidationError("Bill-wise allocations require a customer or supplier ledger");
+    }
+    for (const bill of line.bills) {
+      const partyType = byId.get(line.ledgerId)?.party?.type;
+      if (bill.referenceType === "NEW" && partyType === "CUSTOMER" && (amount(line.debit).isZero() || !amount(line.credit).isZero())) {
+        throw new ValidationError("New customer bills must be allocated to a debit on the customer ledger");
+      }
+      if (bill.referenceType === "NEW" && partyType === "SUPPLIER" && (amount(line.credit).isZero() || !amount(line.debit).isZero())) {
+        throw new ValidationError("New supplier bills must be allocated to a credit on the supplier ledger");
+      }
     }
     for (const tax of line.taxes) {
       const taxLedger = await tx.ledger.findFirst({
@@ -232,6 +248,56 @@ async function validateCompanyLines(
         throw new ValidationError("Batch details are not allowed for an item without batch tracking");
       }
     }
+  }
+  await validateBillAllocations(tx, companyId, lines);
+}
+
+async function validateVoucherTypeRules(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  type: VoucherType,
+  lines: readonly { ledgerId: string; debit: string; credit: string; stock?: { movementType: string; direction: string } | undefined }[],
+  paymentMethod?: string | null,
+) {
+  if (type === VoucherType.SALES_RETURN && lines.some((line) => line.stock && (line.stock.movementType !== "SALES_RETURN" || line.stock.direction !== "IN"))) {
+    throw new ValidationError("Sales return stock must be posted as an incoming SALES_RETURN movement");
+  }
+  if (type === VoucherType.SALES_RETURN) {
+    const customerIds = await tx.ledger.findMany({ where: { companyId, id: { in: [...new Set(lines.map((line) => line.ledgerId))] }, type: "PARTY", party: { type: "CUSTOMER" } }, select: { id: true } });
+    if (!lines.some((line) => customerIds.some((ledger) => ledger.id === line.ledgerId) && amount(line.credit).greaterThan(0))) {
+      throw new ValidationError("Sales returns must credit the customer ledger");
+    }
+  }
+  if (type === VoucherType.CREDIT_NOTE || type === VoucherType.DEBIT_NOTE) {
+    const ledgers = await tx.ledger.findMany({ where: { companyId, id: { in: [...new Set(lines.map((line) => line.ledgerId))] }, type: "PARTY" },
+      select: { id: true, party: { select: { type: true } } } });
+    const parties = new Map(ledgers.map((ledger) => [ledger.id, ledger.party?.type]));
+    const hasPartyLeg = lines.some((line) => {
+      const partyType = parties.get(line.ledgerId);
+      if (!partyType) return false;
+      if (type === VoucherType.CREDIT_NOTE) return partyType === "CUSTOMER" ? Number(line.credit) > 0 : Number(line.debit) > 0;
+      return partyType === "CUSTOMER" ? Number(line.debit) > 0 : Number(line.credit) > 0;
+    });
+    if (!hasPartyLeg) throw new ValidationError(type === VoucherType.CREDIT_NOTE
+      ? "Credit notes must credit a customer or debit a supplier ledger"
+      : "Debit notes must debit a customer or credit a supplier ledger");
+  }
+  if (type !== VoucherType.PAYMENT && type !== VoucherType.RECEIPT && type !== VoucherType.CONTRA) return;
+  const ledgers = await tx.ledger.findMany({ where: { companyId, id: { in: [...new Set(lines.map((line) => line.ledgerId))] }, isActive: true }, select: { id: true, type: true } });
+  const types = new Map(ledgers.map((ledger) => [ledger.id, ledger.type]));
+  const cashBank = (ledgerId: string) => ["CASH", "BANK"].includes(types.get(ledgerId) ?? "");
+  const hasCashBankDebit = lines.some((line) => cashBank(line.ledgerId) && amount(line.debit).greaterThan(0));
+  const hasCashBankCredit = lines.some((line) => cashBank(line.ledgerId) && amount(line.credit).greaterThan(0));
+  if (type === VoucherType.PAYMENT && !hasCashBankCredit) throw new ValidationError("Payment vouchers must credit an active cash or bank ledger");
+  if (type === VoucherType.RECEIPT && !hasCashBankDebit) throw new ValidationError("Receipt vouchers must debit an active cash or bank ledger");
+  if (type === VoucherType.CONTRA && (!lines.every((line) => cashBank(line.ledgerId)) || !hasCashBankDebit || !hasCashBankCredit)) {
+    throw new ValidationError("Contra vouchers must transfer value only between cash and bank ledgers");
+  }
+  if (paymentMethod) {
+    const instrumentLedgerType = paymentMethod === "CASH" ? "CASH" : "BANK";
+    const instrumentLine = lines.some((line) => types.get(line.ledgerId) === instrumentLedgerType &&
+      (type === "PAYMENT" ? amount(line.credit).greaterThan(0) : type === "RECEIPT" ? amount(line.debit).greaterThan(0) : true));
+    if (!instrumentLine) throw new ValidationError(`${paymentMethod} settlement requires the corresponding ${instrumentLedgerType.toLowerCase()} ledger`);
   }
 }
 
@@ -262,8 +328,12 @@ async function createLineDetails(
           voucherLineId: line.id,
           referenceType: bill.referenceType as BillReferenceType,
           referenceNumber: bill.referenceNumber || null,
+          settlesEntryId: bill.billEntryId ?? null,
+          settlesOpeningId: bill.openingBillId ?? null,
           dueDate: bill.dueDate ? day(bill.dueDate) : null,
           amount: amount(bill.amount),
+          settledAmount: amount("0"),
+          remainingAmount: bill.referenceType === "NEW" ? amount(bill.amount) : amount("0"),
         })),
       });
     }
@@ -387,6 +457,8 @@ async function appendLegacyOpeningBills(
       referenceNumber: bill.referenceNumber,
       dueDate: day(bill.dueDate),
       amount: amount(bill.amount),
+      settledAmount: amount("0"),
+      remainingAmount: amount(bill.amount),
     };
   });
   await tx.billWiseOpening.createMany({ data: rows });
@@ -487,6 +559,7 @@ export async function createVoucherDraft(
     const financialYear = await resolveFinancialYear(tx, context.companyId, voucherDate);
     const series = await getOrCreateSeries(tx, context.companyId, input.type, financialYear);
     await validateCompanyLines(tx, context.companyId, input.lines);
+    await validateVoucherTypeRules(tx, context.companyId, input.type, input.lines, input.paymentMethod);
     const voucher = await tx.accountingVoucher.create({
       data: {
         companyId: context.companyId,
@@ -498,6 +571,10 @@ export async function createVoucherDraft(
         financialYearId: financialYear?.id ?? null,
         numberSeriesId: series.id,
         narration: input.narration || null,
+        paymentMethod: input.paymentMethod ?? null,
+        paymentReference: input.paymentReference || null,
+        paymentDate: input.paymentDate ? day(input.paymentDate) : null,
+        paymentBank: input.paymentBank || null,
         idempotencyKey: key,
         requestHash: hash,
         createdById: context.userId,
@@ -509,7 +586,8 @@ export async function createVoucherDraft(
     await appendVoucherHistory(
       tx, context, { ...voucher, narration: input.narration || null },
       VoucherAuditAction.CREATED, DayBookEventType.DRAFT_CREATED,
-      { status: "DRAFT", requestHash: hash, lines: input.lines },
+      { status: "DRAFT", requestHash: hash, paymentMethod: input.paymentMethod ?? null,
+        paymentReference: input.paymentReference || null, paymentDate: input.paymentDate || null, paymentBank: input.paymentBank || null, lines: input.lines },
       requestInfo,
     );
     return { voucher, replayed: false };
@@ -539,6 +617,7 @@ export async function updateVoucherDraft(
     const financialYear = await resolveFinancialYear(tx, context.companyId, voucherDate);
     const series = await getOrCreateSeries(tx, context.companyId, input.type, financialYear);
     await validateCompanyLines(tx, context.companyId, input.lines);
+    await validateVoucherTypeRules(tx, context.companyId, input.type, input.lines, input.paymentMethod);
     await tx.voucherTaxDetail.deleteMany({ where: { companyId: context.companyId, voucherLineId: { in: current.lines.map(({ id }) => id) } } });
     await tx.billWiseEntry.deleteMany({ where: { companyId: context.companyId, voucherLineId: { in: current.lines.map(({ id }) => id) } } });
     await tx.costAllocation.deleteMany({ where: { companyId: context.companyId, voucherId } });
@@ -553,6 +632,10 @@ export async function updateVoucherDraft(
         financialYearId: financialYear?.id ?? null,
         numberSeriesId: series.id,
         narration: input.narration || null,
+        paymentMethod: input.paymentMethod ?? null,
+        paymentReference: input.paymentReference || null,
+        paymentDate: input.paymentDate ? day(input.paymentDate) : null,
+        paymentBank: input.paymentBank || null,
         requestHash: hash,
         approvalStatus: VoucherApprovalStatus.NOT_REQUIRED,
       },
@@ -566,6 +649,10 @@ export async function updateVoucherDraft(
       {
         before: {
           requestHash: current.requestHash,
+          paymentMethod: current.paymentMethod,
+          paymentReference: current.paymentReference,
+          paymentDate: current.paymentDate ? dateText(current.paymentDate) : null,
+          paymentBank: current.paymentBank,
           lines: current.lines.map((line) => ({
             ledgerId: line.ledgerId,
             description: line.description,
@@ -578,7 +665,9 @@ export async function updateVoucherDraft(
           })),
           attachments: current.attachments.map(({ objectKey, fileName, contentType, byteSize }) => ({ objectKey, fileName, contentType, byteSize })),
         },
-        after: { requestHash: hash, lines: input.lines },
+        after: { requestHash: hash, paymentMethod: input.paymentMethod ?? null,
+          paymentReference: input.paymentReference || null, paymentDate: input.paymentDate || null,
+          paymentBank: input.paymentBank || null, lines: input.lines },
       },
       requestInfo,
     );
@@ -735,7 +824,7 @@ export async function postVoucher(
     const totals = sumLines(voucher.lines.map((line) => ({ debit: line.debit.toString(), credit: line.credit.toString() })));
     assertBalancedVoucher(voucher.lines.map((line) => ({ debit: line.debit.toString(), credit: line.credit.toString() })));
     const financialYear = await resolveFinancialYear(tx, context.companyId, voucher.voucherDate);
-    await validateCompanyLines(tx, context.companyId, voucher.lines.map((line) => ({
+    const validationLines = voucher.lines.map((line) => ({
       ledgerId: line.ledgerId,
       description: line.description ?? "",
       debit: line.debit.toString(),
@@ -743,6 +832,8 @@ export async function postVoucher(
       bills: line.billEntries.map((bill) => ({
         referenceType: bill.referenceType,
         referenceNumber: bill.referenceNumber ?? "",
+        ...(bill.settlesEntryId ? { billEntryId: bill.settlesEntryId } : {}),
+        ...(bill.settlesOpeningId ? { openingBillId: bill.settlesOpeningId } : {}),
         dueDate: bill.dueDate ? dateText(bill.dueDate) : "",
         amount: bill.amount.toString(),
       })),
@@ -768,7 +859,10 @@ export async function postVoucher(
         quantity: line.inventoryDetails[0].quantity.toString(),
         unitCost: line.inventoryDetails[0].unitCost.toString(),
       } : undefined,
-    })));
+    }));
+    await validateCompanyLines(tx, context.companyId, validationLines);
+    await validateVoucherTypeRules(tx, context.companyId, voucher.type, validationLines, voucher.paymentMethod);
+    await applyBillSettlements(tx, context.companyId, voucher.lines.flatMap((line) => line.billEntries));
     const series = await getOrCreateSeries(tx, context.companyId, voucher.type, financialYear);
     const voucherNumber = await allocateVoucherNumber(tx, series.id);
     const posted = await tx.accountingVoucher.update({
@@ -806,6 +900,7 @@ export async function postVoucher(
       taxAmount: tax.taxAmount,
       rate: tax.rate,
       transactionDate: voucher.voucherDate,
+      isReversal: voucher.type === VoucherType.SALES_RETURN || voucher.type === VoucherType.CREDIT_NOTE,
     })));
     if (taxTransactions.length) await tx.taxTransaction.createMany({ data: taxTransactions });
     for (const line of voucher.lines) {
@@ -833,6 +928,8 @@ export async function postVoucher(
       tx, context, posted, VoucherAuditAction.POSTED, DayBookEventType.POSTED,
       {
         status: "POSTED", voucherNumber, voucherDate: dateText(voucher.voucherDate),
+        paymentMethod: voucher.paymentMethod, paymentReference: voucher.paymentReference,
+        paymentDate: voucher.paymentDate ? dateText(voucher.paymentDate) : null, paymentBank: voucher.paymentBank,
         debit: totals.debit.toString(), credit: totals.credit.toString(),
       },
       requestInfo,
@@ -893,6 +990,68 @@ function reversedMovementType(type: string) {
   return (reverse[type] ?? "ADJUSTMENT") as "ADJUSTMENT" | "PURCHASE" | "PURCHASE_RETURN" | "SALES" | "SALES_RETURN" | "TRANSFER_IN" | "TRANSFER_OUT" | "PRODUCTION_IN" | "PRODUCTION_OUT" | "JOB_WORK_IN" | "JOB_WORK_OUT";
 }
 
+async function reverseVoucherBillEntries(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  reversalVoucherId: string,
+  reversalLineId: string,
+  originalEntries: readonly {
+    id: string; referenceType: BillReferenceType; referenceNumber: string | null; dueDate: Date | null; amount: Prisma.Decimal;
+    settlesEntryId: string | null; settlesOpeningId: string | null; remainingAmount: Prisma.Decimal;
+  }[],
+  openingBills: readonly { id: string; referenceNumber: string; dueDate: Date; amount: Prisma.Decimal; settledAmount: Prisma.Decimal; remainingAmount: Prisma.Decimal }[],
+) {
+  const rows: Prisma.BillWiseEntryCreateManyInput[] = [];
+  for (const bill of originalEntries) {
+    if (bill.referenceType === BillReferenceType.NEW) {
+      if (!bill.remainingAmount.equals(bill.amount)) {
+        throw new ConflictError(`Settle or reverse allocations against ${bill.referenceNumber ?? "this bill"} before reversing its voucher`);
+      }
+      const closed = await tx.billWiseEntry.updateMany({
+        where: { id: bill.id, companyId, remainingAmount: bill.amount, settledAmount: 0 },
+        data: { remainingAmount: { decrement: bill.amount }, settledAmount: { increment: bill.amount } },
+      });
+      if (closed.count !== 1) throw new ConflictError("Open bill balance changed while reversing the voucher");
+      rows.push({ companyId, voucherId: reversalVoucherId, voucherLineId: reversalLineId,
+        referenceType: BillReferenceType.AGAINST_REF, referenceNumber: bill.referenceNumber, dueDate: bill.dueDate,
+        amount: bill.amount, settledAmount: 0, remainingAmount: 0, settlesEntryId: bill.id });
+      continue;
+    }
+    if (bill.referenceType === BillReferenceType.AGAINST_REF && bill.settlesEntryId) {
+      const restored = await tx.billWiseEntry.updateMany({
+        where: { id: bill.settlesEntryId, companyId, settledAmount: { gte: bill.amount } },
+        data: { settledAmount: { decrement: bill.amount }, remainingAmount: { increment: bill.amount } },
+      });
+      if (restored.count !== 1) throw new ConflictError("Open bill settlement changed while reversing the voucher");
+    }
+    if (bill.referenceType === BillReferenceType.AGAINST_REF && bill.settlesOpeningId) {
+      const restored = await tx.billWiseOpening.updateMany({
+        where: { id: bill.settlesOpeningId, companyId, settledAmount: { gte: bill.amount } },
+        data: { settledAmount: { decrement: bill.amount }, remainingAmount: { increment: bill.amount } },
+      });
+      if (restored.count !== 1) throw new ConflictError("Opening bill settlement changed while reversing the voucher");
+    }
+    rows.push({ companyId, voucherId: reversalVoucherId, voucherLineId: reversalLineId,
+      referenceType: bill.referenceType, referenceNumber: bill.referenceNumber, dueDate: bill.dueDate,
+      amount: bill.amount, settledAmount: 0, remainingAmount: 0,
+      settlesEntryId: bill.settlesEntryId, settlesOpeningId: bill.settlesOpeningId });
+  }
+  for (const bill of openingBills) {
+    if (!bill.remainingAmount.equals(bill.amount)) {
+      throw new ConflictError(`Settle or reverse allocations against ${bill.referenceNumber} before reversing its opening voucher`);
+    }
+    const closed = await tx.billWiseOpening.updateMany({
+      where: { id: bill.id, companyId, remainingAmount: bill.amount, settledAmount: 0 },
+      data: { remainingAmount: { decrement: bill.amount }, settledAmount: { increment: bill.amount } },
+    });
+    if (closed.count !== 1) throw new ConflictError("Opening bill balance changed while reversing the voucher");
+    rows.push({ companyId, voucherId: reversalVoucherId, voucherLineId: reversalLineId,
+      referenceType: BillReferenceType.AGAINST_REF, referenceNumber: bill.referenceNumber, dueDate: bill.dueDate,
+      amount: bill.amount, settledAmount: 0, remainingAmount: 0, settlesOpeningId: bill.id });
+  }
+  if (rows.length) await tx.billWiseEntry.createMany({ data: rows });
+}
+
 export async function reversePostedVoucher(
   context: Context,
   voucherId: string,
@@ -923,6 +1082,7 @@ export async function reversePostedVoucher(
           include: {
             taxDetails: true,
             billEntries: true,
+            billDetails: true,
             costAllocations: true,
           },
         },
@@ -975,19 +1135,7 @@ export async function reversePostedVoucher(
     })));
     for (const [index, originalLine] of original.lines.entries()) {
       const reversalLine = lines[index]!;
-      if (originalLine.billEntries.length) {
-        await tx.billWiseEntry.createMany({
-          data: originalLine.billEntries.map((bill) => ({
-            companyId: context.companyId,
-            voucherId: reversal.id,
-            voucherLineId: reversalLine.id,
-            referenceType: bill.referenceType,
-            referenceNumber: bill.referenceNumber,
-            dueDate: bill.dueDate,
-            amount: bill.amount,
-          })),
-        });
-      }
+      await reverseVoucherBillEntries(tx, context.companyId, reversal.id, reversalLine.id, originalLine.billEntries, originalLine.billDetails);
       if (originalLine.taxDetails.length) {
         await tx.voucherTaxDetail.createMany({
           data: originalLine.taxDetails.map((tax) => ({

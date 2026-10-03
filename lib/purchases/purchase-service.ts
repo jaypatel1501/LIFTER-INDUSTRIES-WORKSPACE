@@ -388,7 +388,7 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
       return { document: prior, replayed: true };
     }
     const document = await tx.purchaseDocument.findFirst({ where: { id: documentId, companyId: actor.companyId, status: "DRAFT" },
-      include: { party: true, sourceDocument: { select: { id: true, documentType: true, status: true, supplierInvoiceNumber: true, paymentMode: true, paymentLedgerId: true } }, lines: { orderBy: { lineNumber: "asc" }, include: { sourceLine: true } } } });
+      include: { party: true, sourceDocument: { select: { id: true, documentType: true, status: true, supplierInvoiceNumber: true, paymentMode: true, paymentLedgerId: true, voucherId: true } }, lines: { orderBy: { lineNumber: "asc" }, include: { sourceLine: true } } } });
     if (!document) throw new NotFoundError("Draft purchase document not found in the current company");
     if (!["RECEIPT_NOTE", "PURCHASE_INVOICE", "PURCHASE_RETURN"].includes(document.documentType)) throw new ValidationError("Issue a purchase order before converting it to a receipt or invoice");
     if (document.documentType === "RECEIPT_NOTE" && document.sourceDocument && !["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED", "PARTIALLY_INVOICED"].includes(document.sourceDocument.status)) throw new ConflictError("The source purchase order is not available for receipt");
@@ -548,13 +548,29 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
     if (document.documentType === "PURCHASE_INVOICE" && paymentMode === "CREDIT") {
       const payableLine = persistedLines.find((line) => line.ledgerId === partyLedgerId);
       if (payableLine) await tx.billWiseEntry.create({ data: { companyId: actor.companyId, voucherId: voucher.id, voucherLineId: payableLine.id,
-        referenceType: "NEW", referenceNumber: document.supplierInvoiceNumber, dueDate: input.dueDate ? date(input.dueDate) : document.dueDate, amount: document.totalAmount } });
+        referenceType: "NEW", referenceNumber: document.supplierInvoiceNumber, dueDate: input.dueDate ? date(input.dueDate) : document.dueDate,
+        amount: document.totalAmount, settledAmount: decimal(0), remainingAmount: document.totalAmount } });
     }
     if (document.documentType === "PURCHASE_RETURN" && document.sourceDocument?.paymentMode !== "CASH") {
       const payableLine = persistedLines.find((line) => line.ledgerId === partyLedgerId);
-      if (payableLine) await tx.billWiseEntry.create({ data: { companyId: actor.companyId, voucherId: voucher.id, voucherLineId: payableLine.id,
-        referenceType: "AGAINST_REF", referenceNumber: document.supplierInvoiceNumber ?? document.sourceDocument?.supplierInvoiceNumber ?? document.sourceDocumentId,
-        dueDate: null, amount: document.totalAmount } });
+      const bill = document.sourceDocument?.voucherId ? await tx.billWiseEntry.findFirst({ where: {
+        companyId: actor.companyId, voucherId: document.sourceDocument.voucherId, referenceType: "NEW", voucherLine: { ledgerId: partyLedgerId },
+      }, select: { id: true, referenceNumber: true, remainingAmount: true } }) : null;
+      if (!bill) throw new ConflictError("The supplier invoice has no linked bill-wise payable reference");
+      if (payableLine) {
+        const againstAmount = Prisma.Decimal.min(document.totalAmount, bill.remainingAmount);
+        const onAccountAmount = document.totalAmount.minus(againstAmount);
+        if (againstAmount.greaterThan(0)) {
+          const updatedBill = await tx.billWiseEntry.updateMany({ where: { id: bill.id, companyId: actor.companyId, remainingAmount: { gte: againstAmount } },
+            data: { settledAmount: { increment: againstAmount }, remainingAmount: { decrement: againstAmount } } });
+          if (updatedBill.count !== 1) throw new ConflictError("Supplier bill balance changed while posting the return");
+          await tx.billWiseEntry.create({ data: { companyId: actor.companyId, voucherId: voucher.id, voucherLineId: payableLine.id,
+            referenceType: "AGAINST_REF", referenceNumber: bill.referenceNumber,
+            settlesEntryId: bill.id, dueDate: null, amount: againstAmount, settledAmount: decimal(0), remainingAmount: decimal(0) } });
+        }
+        if (onAccountAmount.greaterThan(0)) await tx.billWiseEntry.create({ data: { companyId: actor.companyId, voucherId: voucher.id, voucherLineId: payableLine.id,
+          referenceType: "ON_ACCOUNT", referenceNumber: null, dueDate: null, amount: onAccountAmount, settledAmount: decimal(0), remainingAmount: decimal(0) } });
+      }
     }
     if (document.sourceDocumentId && ["RECEIPT_NOTE", "PURCHASE_INVOICE"].includes(document.documentType)) {
       const parent = await tx.purchaseDocument.findFirst({ where: { id: document.sourceDocumentId, companyId: actor.companyId }, select: { documentType: true, sourceDocumentId: true } });

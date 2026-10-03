@@ -60,6 +60,18 @@ enum VoucherType {
   PAYMENT
   RECEIPT
   CONTRA
+  SALES_RETURN
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  CHEQUE
+  UPI
+  NEFT
+  RTGS
 }
 
 enum VoucherStatus {
@@ -467,6 +479,10 @@ model AccountingVoucher {
   financialYearId      String?
   numberSeriesId       String?
   narration            String?
+  paymentMethod        PaymentMethod?
+  paymentReference     String?
+  paymentDate          DateTime?               @db.Date
+  paymentBank          String?
   idempotencyKey       String
   requestHash          String
   postIdempotencyKey   String?
@@ -508,6 +524,7 @@ model AccountingVoucher {
   @@unique([companyId, postIdempotencyKey])
   @@unique([companyId, cancelIdempotencyKey])
   @@unique([companyId, reversalOfId])
+  @@unique([companyId, paymentReference])
   @@index([companyId, type, voucherDate])
   @@index([companyId, status, voucherDate])
   @@index([companyId, financialYearId, status])
@@ -604,19 +621,29 @@ model BillWiseEntry {
   companyId       String
   voucherId       String
   voucherLineId   String
+  settlesEntryId  String?
+  settlesOpeningId String?
   referenceType   BillReferenceType
   referenceNumber String?
   dueDate         DateTime?         @db.Date
   amount          Decimal           @db.Decimal(18, 2)
+  settledAmount   Decimal           @default(0) @db.Decimal(18, 2)
+  remainingAmount Decimal           @default(0) @db.Decimal(18, 2)
   createdAt       DateTime          @default(now())
   company         Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
   voucher         AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
   voucherLine     VoucherLine       @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  settlesEntry    BillWiseEntry?    @relation("BillEntrySettlement", fields: [companyId, settlesEntryId], references: [companyId, id], onDelete: Restrict)
+  settlements     BillWiseEntry[]   @relation("BillEntrySettlement")
+  settlesOpening  BillWiseOpening?  @relation("OpeningBillSettlement", fields: [companyId, settlesOpeningId], references: [companyId, id], onDelete: Restrict)
 
   @@unique([companyId, id])
   @@index([companyId, referenceNumber])
   @@index([companyId, dueDate])
   @@index([companyId, voucherId])
+  @@index([companyId, settlesEntryId])
+  @@index([companyId, settlesOpeningId])
+  @@index([companyId, remainingAmount, dueDate])
 }
 
 model CostCentre {
@@ -1066,11 +1093,16 @@ model BillWiseOpening {
   referenceNumber String
   dueDate         DateTime    @db.Date
   amount          Decimal     @db.Decimal(18, 2)
+  settledAmount   Decimal     @default(0) @db.Decimal(18, 2)
+  remainingAmount Decimal     @default(0) @db.Decimal(18, 2)
   createdAt       DateTime    @default(now())
   voucherLine     VoucherLine @relation(fields: [companyId, voucherLineId], references: [companyId, id], onDelete: Restrict)
+  settlements     BillWiseEntry[] @relation("OpeningBillSettlement")
 
+  @@unique([companyId, id])
   @@unique([companyId, voucherLineId, referenceNumber])
   @@index([companyId, dueDate])
+  @@index([companyId, remainingAmount, dueDate])
 }
 
 model StockGroup {

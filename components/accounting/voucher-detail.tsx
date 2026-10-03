@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { Locale } from "@prisma/client";
 import { useEffect, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { managementCopy } from "@/lib/management-copy";
 import { voucherDraftSchema } from "@/lib/validation/vouchers";
 
-const voucherTypes = ["OPENING_BALANCE", "JOURNAL", "SALES", "PURCHASE", "PAYMENT", "RECEIPT", "CONTRA"] as const;
+const voucherTypes = ["OPENING_BALANCE", "JOURNAL", "SALES", "PURCHASE", "PAYMENT", "RECEIPT", "CONTRA", "SALES_RETURN", "CREDIT_NOTE", "DEBIT_NOTE"] as const;
 type DraftInput = z.input<typeof voucherDraftSchema>;
 type DraftBill = NonNullable<DraftInput["lines"][number]["bills"]>[number];
 type DraftTax = NonNullable<DraftInput["lines"][number]["taxes"]>[number];
@@ -25,6 +26,9 @@ const voucherTypeLabels: Record<(typeof voucherTypes)[number], [string, string]>
   PAYMENT: ["Payment", "भुगतान"],
   RECEIPT: ["Receipt", "रसीद"],
   CONTRA: ["Contra", "कॉन्ट्रा"],
+  SALES_RETURN: ["Sales return", "बिक्री वापसी"],
+  CREDIT_NOTE: ["Credit note", "क्रेडिट नोट"],
+  DEBIT_NOTE: ["Debit note", "डेबिट नोट"],
 };
 const voucherStatusLabels: Record<string, [string, string]> = {
   DRAFT: ["Draft", "मसौदा"],
@@ -52,6 +56,7 @@ const detailSchema = z.object({
     voucher: z.object({
       id: z.string(), voucherNumber: z.string(), type: z.enum(voucherTypes), status: z.string(),
       approvalStatus: z.string(), voucherDate: z.string(), narration: z.string().nullable(),
+      paymentMethod: z.string().nullable(), paymentReference: z.string().nullable(), paymentDate: z.string().nullable(), paymentBank: z.string().nullable(),
       createdAt: z.string(), createdById: z.string().nullable(), postedAt: z.string().nullable(),
       numberSeries: z.object({ id: z.string(), prefix: z.string(), suffix: z.string(), requiresApproval: z.boolean() }).nullable(),
       financialYear: z.object({ id: z.string(), name: z.string() }).nullable(),
@@ -61,6 +66,7 @@ const detailSchema = z.object({
         ledger: z.object({ id: z.string(), name: z.string(), code: z.string().nullable(), type: z.string() }),
         billEntries: z.array(z.object({
           id: z.string(), referenceType: z.string(), referenceNumber: z.string().nullable(),
+          settlesEntryId: z.string().nullable(), settlesOpeningId: z.string().nullable(),
           dueDate: z.string().nullable(), amount: z.union([z.string(), z.number()]),
         })),
         taxDetails: z.array(z.object({
@@ -115,7 +121,8 @@ export function VoucherDetail({
   const draftForm = useForm<DraftInput, unknown, z.output<typeof voucherDraftSchema>>({
     resolver: zodResolver(voucherDraftSchema),
     defaultValues: {
-      type: "JOURNAL", voucherDate: new Date().toISOString().slice(0, 10), narration: "",
+      type: "JOURNAL", voucherDate: new Date().toISOString().slice(0, 10), narration: "", paymentMethod: undefined,
+      paymentReference: "", paymentDate: "", paymentBank: "",
       lines: [
         { ledgerId: "", description: "", debit: "0.00", credit: "0.00", bills: [], taxes: [], costAllocations: [] },
         { ledgerId: "", description: "", debit: "0.00", credit: "0.00", bills: [], taxes: [], costAllocations: [] },
@@ -124,6 +131,8 @@ export function VoucherDetail({
     },
   });
   const draftLines = useFieldArray({ control: draftForm.control, name: "lines" });
+  const draftType = useWatch({ control: draftForm.control, name: "type" });
+  const draftPaymentMethod = useWatch({ control: draftForm.control, name: "paymentMethod" });
   const { reset } = draftForm;
   const voucherQuery = useQuery({
     queryKey: ["voucher", voucherId],
@@ -150,6 +159,10 @@ export function VoucherDetail({
       type: voucher.type,
       voucherDate: voucher.voucherDate,
       narration: voucher.narration ?? "",
+      paymentMethod: voucher.paymentMethod as DraftInput["paymentMethod"],
+      paymentReference: voucher.paymentReference ?? "",
+      paymentDate: voucher.paymentDate?.slice(0, 10) ?? "",
+      paymentBank: voucher.paymentBank ?? "",
       attachments: [],
       lines: voucher.lines.map((line) => ({
         ledgerId: line.ledger.id,
@@ -159,6 +172,8 @@ export function VoucherDetail({
         bills: line.billEntries.map((bill) => ({
           referenceType: bill.referenceType as DraftBill["referenceType"],
           referenceNumber: bill.referenceNumber ?? "",
+          ...(bill.settlesEntryId ? { billEntryId: bill.settlesEntryId } : {}),
+          ...(bill.settlesOpeningId ? { openingBillId: bill.settlesOpeningId } : {}),
           dueDate: bill.dueDate ? bill.dueDate.slice(0, 10) : "",
           amount: String(bill.amount),
         })),
@@ -245,11 +260,15 @@ export function VoucherDetail({
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/dashboard/vouchers" className="text-sm text-blue-700 hover:underline">← {copy("All vouchers", "सभी वाउचर")}</Link>
+          <Link href="/dashboard/vouchers" className="print:hidden text-sm text-blue-700 hover:underline">← {copy("All vouchers", "सभी वाउचर")}</Link>
           <h1 className="mt-2 text-2xl font-semibold">{voucher.voucherNumber}</h1>
           <p className="mt-1 text-sm text-slate-600">{copy(displayType[0], displayType[1])} · {voucher.voucherDate} · {copy(displayStatus[0], displayStatus[1])}{voucher.financialYear ? ` · ${voucher.financialYear.name}` : ""}</p>
+          {voucher.paymentMethod && <p className="mt-1 text-sm text-slate-600">{voucher.paymentMethod}{voucher.paymentReference ? ` · ${voucher.paymentReference}` : ""}{voucher.paymentDate ? ` · ${voucher.paymentDate.slice(0, 10)}` : ""}{voucher.paymentBank ? ` · ${voucher.paymentBank}` : ""}</p>}
         </div>
-        {isDraft && capabilities.canPost && (!approvalRequired || voucher.approvalStatus === "APPROVED") && <Button disabled={action.isPending} onClick={() => action.mutate({ path: "post", idempotent: true })}>{copy("Post voucher", "वाउचर पोस्ट करें")}</Button>}
+        <div className="print:hidden flex gap-2">
+          <Button type="button" variant="secondary" onClick={() => window.print()}><Printer aria-hidden="true" size={16} />{copy("Print", "प्रिंट")}</Button>
+          {isDraft && capabilities.canPost && (!approvalRequired || voucher.approvalStatus === "APPROVED") && <Button disabled={action.isPending} onClick={() => action.mutate({ path: "post", idempotent: true })}>{copy("Post voucher", "वाउचर पोस्ट करें")}</Button>}
+        </div>
         {isDraft && capabilities.canCancel && <Button variant="destructive" disabled={action.isPending} onClick={() => action.mutate({ path: "cancel", idempotent: true })}>{copy("Cancel draft", "मसौदा रद्द करें")}</Button>}
       </header>
 
@@ -262,6 +281,16 @@ export function VoucherDetail({
             <label className="grid gap-1 text-sm">{copy("Date", "तिथि")}<Input type="date" {...draftForm.register("voucherDate")} /></label>
             <label className="grid gap-1 text-sm">{copy("Narration", "विवरण")}<Input maxLength={500} {...draftForm.register("narration")} /></label>
           </div>
+          {["PAYMENT", "RECEIPT", "CONTRA"].includes(draftType) && <div className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-4">
+            <label className="grid gap-1 text-sm">{copy("Payment method", "भुगतान का माध्यम")}
+              <select className="h-11 rounded-lg border border-slate-300 bg-white px-3" value={draftPaymentMethod ?? ""} onChange={(event) => draftForm.setValue("paymentMethod", event.target.value ? event.target.value as NonNullable<DraftInput["paymentMethod"]> : undefined, { shouldDirty: true, shouldValidate: true })}>
+                <option value="">{copy("Choose method", "माध्यम चुनें")}</option>{["CASH", "BANK", "CHEQUE", "UPI", "NEFT", "RTGS"].map((method) => <option key={method} value={method}>{method}</option>)}
+              </select>
+            </label>
+            {draftPaymentMethod && !["CASH", "BANK"].includes(draftPaymentMethod) && <label className="grid gap-1 text-sm">{copy("Transaction / cheque reference", "लेनदेन / चेक संदर्भ")}<Input required maxLength={120} {...draftForm.register("paymentReference")} /></label>}
+            <label className="grid gap-1 text-sm">{copy("Instrument date", "भुगतान साधन तारीख")}<Input type="date" required={Boolean(draftPaymentMethod && !["CASH", "BANK"].includes(draftPaymentMethod))} {...draftForm.register("paymentDate")} /></label>
+            {draftPaymentMethod !== "CASH" && <label className="grid gap-1 text-sm">{copy("Bank", "बैंक")}<Input maxLength={120} {...draftForm.register("paymentBank")} /></label>}
+          </div>}
           {draftLines.fields.map((field, index) => <div key={field.id} className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(180px,1.2fr)_1fr_130px_130px_auto]">
             <label className="grid gap-1 text-xs">{copy("Ledger", "खाता")}<select className="h-10 rounded-md border bg-white px-2 text-sm" {...draftForm.register(`lines.${index}.ledgerId`)}><option value="">{copy("Select ledger", "खाता चुनें")}</option>{options.data?.ledgers.map((ledger) => <option key={ledger.id} value={ledger.id}>{ledger.name}{ledger.code ? ` (${ledger.code})` : ""}</option>)}</select></label>
             <label className="grid gap-1 text-xs">{copy("Description", "विवरण")}<Input maxLength={240} {...draftForm.register(`lines.${index}.description`)} /></label>

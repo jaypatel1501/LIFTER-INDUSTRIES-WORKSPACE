@@ -22,6 +22,8 @@ const taxSchema = z.object({
 const billSchema = z.object({
   referenceType: z.enum(["NEW", "AGAINST_REF", "ON_ACCOUNT"]),
   referenceNumber: text(100),
+  billEntryId: z.string().min(1).max(64).optional(),
+  openingBillId: z.string().min(1).max(64).optional(),
   dueDate: date.optional().or(z.literal("")),
   amount: money.refine((value) => Number(value) > 0),
 }).superRefine((bill, context) => {
@@ -30,6 +32,12 @@ const billSchema = z.object({
   }
   if (bill.referenceType !== "ON_ACCOUNT" && !bill.referenceNumber) {
     context.addIssue({ code: "custom", path: ["referenceNumber"], message: "A reference number is required" });
+  }
+  if (bill.referenceType === "AGAINST_REF" && Boolean(bill.billEntryId) === Boolean(bill.openingBillId)) {
+    context.addIssue({ code: "custom", path: ["billEntryId"], message: "Select exactly one open invoice or opening bill to settle" });
+  }
+  if (bill.referenceType !== "AGAINST_REF" && (bill.billEntryId || bill.openingBillId)) {
+    context.addIssue({ code: "custom", path: ["billEntryId"], message: "Only against-reference entries can settle an existing bill" });
   }
 });
 
@@ -117,8 +125,26 @@ export const voucherDraftSchema = z.object({
   type: z.nativeEnum(VoucherType),
   voucherDate: date,
   narration: text(500),
+  paymentMethod: z.enum(["CASH", "BANK", "CHEQUE", "UPI", "NEFT", "RTGS"]).optional(),
+  paymentReference: text(120),
+  paymentDate: date.optional().or(z.literal("")),
+  paymentBank: text(120),
   lines: z.array(voucherLineSchema).min(2).max(100),
   attachments: z.array(attachmentSchema).max(20).default([]),
+}).superRefine((voucher, context) => {
+  const referenceRequired = ["CHEQUE", "UPI", "NEFT", "RTGS"].includes(voucher.paymentMethod ?? "");
+  if (referenceRequired && !voucher.paymentReference) {
+    context.addIssue({ code: "custom", path: ["paymentReference"], message: "A payment reference is required for this payment method" });
+  }
+  if (referenceRequired && !voucher.paymentDate) {
+    context.addIssue({ code: "custom", path: ["paymentDate"], message: "An instrument date is required for this payment method" });
+  }
+  if (voucher.paymentMethod && !["PAYMENT", "RECEIPT", "CONTRA"].includes(voucher.type)) {
+    context.addIssue({ code: "custom", path: ["paymentMethod"], message: "Payment methods are only available for payment, receipt and contra vouchers" });
+  }
+  if (voucher.paymentReference && !voucher.paymentMethod) {
+    context.addIssue({ code: "custom", path: ["paymentMethod"], message: "Select a payment method for this reference" });
+  }
 });
 
 export const voucherListQuerySchema = z.object({

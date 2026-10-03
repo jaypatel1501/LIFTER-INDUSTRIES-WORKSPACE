@@ -38,6 +38,29 @@ describe("voucher posting validation", () => {
     expect(result.success).toBe(false);
   });
 
+  it("requires electronic and cheque references and an exact open-bill target", () => {
+    const payment = {
+      ...validDraft,
+      type: "PAYMENT",
+      paymentMethod: "UPI",
+      paymentDate: "2026-10-02",
+      lines: [
+        { ...validDraft.lines[0], debit: "100.00" },
+        { ...validDraft.lines[1], debit: "0.00", credit: "100.00" },
+      ],
+    };
+    expect(voucherDraftSchema.safeParse(payment).success).toBe(false);
+    expect(voucherDraftSchema.safeParse({ ...payment, paymentReference: "UPI-TRANSACTION-8" }).success).toBe(true);
+    expect(voucherDraftSchema.safeParse({ ...payment, paymentReference: "", lines: [
+      { ...payment.lines[0], bills: [{ referenceType: "AGAINST_REF", referenceNumber: "SUP-INV-1", amount: "50.00" }] },
+      payment.lines[1],
+    ] }).success).toBe(false);
+    expect(voucherDraftSchema.safeParse({ ...payment, paymentReference: "UPI-TRANSACTION-9", lines: [
+      { ...payment.lines[0], bills: [{ referenceType: "AGAINST_REF", referenceNumber: "SUP-INV-1", billEntryId: "open-bill-1", amount: "50.00" }] },
+      payment.lines[1],
+    ] }).success).toBe(true);
+  });
+
   it("rejects an inventory batch whose expiry precedes manufacturing", () => {
     const result = voucherDraftSchema.safeParse({
       ...validDraft,

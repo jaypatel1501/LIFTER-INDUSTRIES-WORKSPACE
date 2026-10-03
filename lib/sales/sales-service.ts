@@ -822,6 +822,7 @@ export async function postSalesInvoice(
           companyId: actor.companyId, voucherId: voucher.id, voucherLineId: receivableLine.id,
           referenceType: "NEW", referenceNumber: document.documentNumber,
           dueDate: document.dueDate, amount: total,
+          settledAmount: decimal(0), remainingAmount: total,
         },
       });
     }

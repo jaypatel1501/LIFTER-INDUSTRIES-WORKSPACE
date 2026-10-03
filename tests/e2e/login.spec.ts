@@ -19,6 +19,13 @@ test("liveness endpoint responds successfully", async ({ request }) => {
   await expect(response).toBeOK();
 });
 
+test("outstanding balances and voucher export require an authenticated company", async ({ request }) => {
+  for (const path of ["/api/accounting/reports/outstanding", "/api/accounting/vouchers/export"]) {
+    const response = await request.get(path);
+    expect(response.status()).toBe(401);
+  }
+});
+
 test("company management pages require an authenticated session", async ({ page }) => {
   for (const path of [
     "/dashboard/company",

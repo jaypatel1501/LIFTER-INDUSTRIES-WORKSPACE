@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download } from "lucide-react";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import type { Locale } from "@prisma/client";
@@ -28,6 +29,7 @@ const listSchema = z.object({
     vouchers: z.array(z.object({
       id: z.string(), voucherNumber: z.string(), type: z.string(), status: z.string(),
       approvalStatus: z.string(), voucherDate: z.string(), narration: z.string().nullable(),
+      paymentMethod: z.string().nullable(), paymentReference: z.string().nullable(),
       debitTotal: z.string(), creditTotal: z.string(), lineCount: z.number(), attachmentCount: z.number(),
       reversalOf: z.object({ id: z.string(), voucherNumber: z.string() }).nullable(),
       reversals: z.array(z.object({ id: z.string(), voucherNumber: z.string() })),
@@ -35,6 +37,11 @@ const listSchema = z.object({
     total: z.number(), page: z.number(), pageSize: z.number(),
   }),
 });
+const openBillsSchema = z.object({ success: z.literal(true), data: z.object({ bills: z.array(z.object({
+  kind: z.enum(["ENTRY", "OPENING"]), id: z.string(), referenceNumber: z.string(), dueDate: z.string().nullable(), remainingAmount: z.string(),
+  ledgerId: z.string(), party: z.object({ id: z.string(), name: z.string(), type: z.enum(["CUSTOMER", "SUPPLIER"]) }).nullable(),
+  voucher: z.object({ id: z.string(), number: z.string(), date: z.string() }),
+})), total: z.number(), page: z.number(), pageSize: z.number() }) });
 type DraftInput = z.input<typeof voucherDraftSchema>;
 
 const voucherTypes = [
@@ -45,6 +52,9 @@ const voucherTypes = [
   ["PAYMENT", "Payment", "भुगतान"],
   ["RECEIPT", "Receipt", "रसीद"],
   ["CONTRA", "Contra", "कॉन्ट्रा"],
+  ["SALES_RETURN", "Sales return", "बिक्री वापसी"],
+  ["CREDIT_NOTE", "Credit note", "क्रेडिट नोट"],
+  ["DEBIT_NOTE", "Debit note", "डेबिट नोट"],
 ] as const;
 const voucherStatuses = [
   ["DRAFT", "Draft", "मसौदा"],
@@ -78,6 +88,7 @@ export function VouchersManager({
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const [showDraftForm, setShowDraftForm] = useState(false);
+  const [billSearch, setBillSearch] = useState("");
 
   const options = useQuery({
     queryKey: ["voucher-options"],
@@ -118,6 +129,19 @@ export function VouchersManager({
   });
   const lines = useFieldArray({ control: form.control, name: "lines" });
   const watchedLines = useWatch({ control: form.control, name: "lines" });
+  const watchedType = useWatch({ control: form.control, name: "type" });
+  const watchedPaymentMethod = useWatch({ control: form.control, name: "paymentMethod" });
+  const openBillQueries = useQueries({ queries: (watchedLines ?? []).map((line) => ({
+    queryKey: ["voucher-open-bills", line?.ledgerId ?? "", billSearch],
+    enabled: showDraftForm && Boolean(line?.ledgerId),
+    queryFn: async () => {
+      const params = new URLSearchParams({ ledgerId: line?.ledgerId ?? "", page: "1", pageSize: "50" });
+      if (billSearch) params.set("search", billSearch);
+      const response = await fetch(`/api/accounting/reports/outstanding?${params}`);
+      if (!response.ok) throw new Error(copy("Could not load open bills.", "खुले बिल लोड नहीं हो सके।"));
+      return openBillsSchema.parse(await response.json()).data;
+    },
+  })) });
   const createDraft = useMutation({
     mutationFn: async (payload: z.output<typeof voucherDraftSchema>) => {
       const response = await fetch("/api/accounting/vouchers", {
@@ -136,6 +160,13 @@ export function VouchersManager({
   });
   const total = vouchers.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / 25));
+  const exportParams = new URLSearchParams({ page: "1", pageSize: "100" });
+  if (search) exportParams.set("search", search);
+  if (status) exportParams.set("status", status);
+  if (type) exportParams.set("type", type);
+  if (from) exportParams.set("from", from);
+  if (to) exportParams.set("to", to);
+  const exportHref = `/api/accounting/vouchers/export?${exportParams}`;
 
   return (
     <div className="space-y-6">
@@ -144,7 +175,10 @@ export function VouchersManager({
           <h1 className="text-2xl font-semibold">{copy("Vouchers", "वाउचर")}</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">{copy("Create drafts, review approval history, post balanced transactions and reverse posted documents with an auditable trail.", "मसौदे बनाएँ, अनुमोदन इतिहास देखें, संतुलित लेनदेन पोस्ट करें और ऑडिट ट्रेल सहित पोस्ट किए दस्तावेज़ रिवर्स करें।")}</p>
         </div>
-        {canCreate && <Button onClick={() => setShowDraftForm((visible) => !visible)}>{showDraftForm ? copy("Close draft form", "मसौदा फ़ॉर्म बंद करें") : copy("New voucher draft", "नया वाउचर मसौदा")}</Button>}
+        <div className="flex gap-2">
+          <a href={exportHref} className="inline-flex h-11 items-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 hover:bg-slate-50"><Download aria-hidden="true" size={16} />{copy("Export CSV", "CSV निर्यात")}</a>
+          {canCreate && <Button onClick={() => setShowDraftForm((visible) => !visible)}>{showDraftForm ? copy("Close draft form", "मसौदा फ़ॉर्म बंद करें") : copy("New voucher draft", "नया वाउचर मसौदा")}</Button>}
+        </div>
       </header>
 
       {showDraftForm && canCreate && <form
@@ -154,13 +188,34 @@ export function VouchersManager({
         <h2 className="text-lg font-semibold">{copy("Draft details", "मसौदे का विवरण")}</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <label className="grid gap-1 text-sm">{copy("Voucher type", "वाउचर प्रकार")}
-            <select className="h-11 rounded-lg border border-slate-300 bg-white px-3" {...form.register("type")}>
+            <select className="h-11 rounded-lg border border-slate-300 bg-white px-3" value={watchedType} onChange={(event) => {
+              const nextType = event.target.value as DraftInput["type"];
+              form.setValue("type", nextType, { shouldDirty: true, shouldValidate: true });
+              if (["PAYMENT", "RECEIPT", "CONTRA"].includes(nextType)) {
+                if (!form.getValues("paymentMethod")) form.setValue("paymentMethod", "BANK", { shouldDirty: true });
+              } else {
+                form.setValue("paymentMethod", undefined, { shouldDirty: true });
+                form.setValue("paymentReference", "", { shouldDirty: true });
+                form.setValue("paymentDate", "", { shouldDirty: true });
+                form.setValue("paymentBank", "", { shouldDirty: true });
+              }
+            }}>
               {voucherTypes.map(([value, en, hi]) => <option key={value} value={value}>{copy(en, hi)}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-sm">{copy("Date", "तिथि")}<Input type="date" {...form.register("voucherDate")} /></label>
           <label className="grid gap-1 text-sm">{copy("Narration", "विवरण")}<Input maxLength={500} {...form.register("narration")} /></label>
         </div>
+        {["PAYMENT", "RECEIPT", "CONTRA"].includes(watchedType) && <div className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-4">
+          <label className="grid gap-1 text-sm">{copy("Payment method", "भुगतान का माध्यम")}
+            <select className="h-11 rounded-lg border border-slate-300 bg-white px-3" value={watchedPaymentMethod ?? ""} onChange={(event) => form.setValue("paymentMethod", event.target.value ? event.target.value as NonNullable<DraftInput["paymentMethod"]> : undefined, { shouldDirty: true, shouldValidate: true })}>
+              <option value="">{copy("Choose method", "माध्यम चुनें")}</option>{["CASH", "BANK", "CHEQUE", "UPI", "NEFT", "RTGS"].map((method) => <option key={method} value={method}>{method}</option>)}
+            </select>
+          </label>
+          {watchedPaymentMethod && watchedPaymentMethod !== "CASH" && watchedPaymentMethod !== "BANK" && <label className="grid gap-1 text-sm">{copy("Transaction / cheque reference", "लेनदेन / चेक संदर्भ")}<Input required maxLength={120} {...form.register("paymentReference")} /></label>}
+          <label className="grid gap-1 text-sm">{copy("Instrument date", "भुगतान साधन तारीख")}<Input type="date" required={Boolean(watchedPaymentMethod && !["CASH", "BANK"].includes(watchedPaymentMethod))} {...form.register("paymentDate")} /></label>
+          {watchedPaymentMethod !== "CASH" && <label className="grid gap-1 text-sm">{copy("Bank", "बैंक")}<Input maxLength={120} {...form.register("paymentBank")} /></label>}
+        </div>}
         <div className="space-y-3">
           <div className="flex items-center justify-between"><h3 className="font-medium">{copy("Voucher lines", "वाउचर पंक्तियाँ")}</h3>
             <Button type="button" variant="secondary" size="sm" onClick={() => lines.append({ ledgerId: "", description: "", debit: "0.00", credit: "0.00", bills: [], taxes: [], costAllocations: [] })}>{copy("Add line", "पंक्ति जोड़ें")}</Button>
@@ -183,12 +238,34 @@ export function VouchersManager({
               <div className="mt-3 grid gap-4 lg:grid-cols-2">
                 <div className="space-y-2 rounded-lg bg-slate-50 p-3">
                   <h4 className="text-sm font-semibold">{copy("Bill-wise allocation", "बिल-वार आवंटन")}</h4>
-                  {(watchedLines?.[index]?.bills ?? []).map((_, billIndex) => <div key={billIndex} className="grid gap-2 sm:grid-cols-4">
-                    <select className="h-10 rounded-md border bg-white px-2 text-sm" {...form.register(`lines.${index}.bills.${billIndex}.referenceType`)}><option value="NEW">NEW</option><option value="AGAINST_REF">AGAINST_REF</option><option value="ON_ACCOUNT">ON_ACCOUNT</option></select>
-                    <Input placeholder={copy("Reference", "संदर्भ")} {...form.register(`lines.${index}.bills.${billIndex}.referenceNumber`)} />
+                  {(watchedLines?.[index]?.bills ?? []).map((bill, billIndex) => <div key={billIndex} className="grid gap-2 sm:grid-cols-4">
+                    <select className="h-10 rounded-md border bg-white px-2 text-sm" value={bill.referenceType} onChange={(event) => {
+                      const path = `lines.${index}.bills.${billIndex}` as const;
+                      const referenceType = event.target.value as "NEW" | "AGAINST_REF" | "ON_ACCOUNT";
+                      form.setValue(`${path}.referenceType`, referenceType, { shouldDirty: true, shouldValidate: true });
+                      if (referenceType !== "AGAINST_REF") {
+                        form.setValue(`${path}.billEntryId`, undefined);
+                        form.setValue(`${path}.openingBillId`, undefined);
+                      }
+                      if (referenceType === "ON_ACCOUNT") form.setValue(`${path}.referenceNumber`, "");
+                    }}><option value="NEW">NEW</option><option value="AGAINST_REF">AGAINST_REF</option><option value="ON_ACCOUNT">ON_ACCOUNT</option></select>
+                    {bill.referenceType === "AGAINST_REF" ? <select className="h-10 rounded-md border bg-white px-2 text-sm" value={bill.billEntryId ? `ENTRY:${bill.billEntryId}` : bill.openingBillId ? `OPENING:${bill.openingBillId}` : ""} onChange={(event) => {
+                      const selected = (openBillQueries[index]?.data?.bills ?? []).find((candidate) => `${candidate.kind}:${candidate.id}` === event.target.value);
+                      const path = `lines.${index}.bills.${billIndex}` as const;
+                      form.setValue(`${path}.billEntryId`, selected?.kind === "ENTRY" ? selected.id : undefined, { shouldDirty: true, shouldValidate: true });
+                      form.setValue(`${path}.openingBillId`, selected?.kind === "OPENING" ? selected.id : undefined, { shouldDirty: true, shouldValidate: true });
+                      form.setValue(`${path}.referenceNumber`, selected?.referenceNumber ?? "", { shouldDirty: true, shouldValidate: true });
+                      form.setValue(`${path}.dueDate`, selected?.dueDate ?? "", { shouldDirty: true });
+                      if (selected) form.setValue(`${path}.amount`, selected.remainingAmount, { shouldDirty: true, shouldValidate: true });
+                    }}><option value="">{copy("Select open bill", "खुला बिल चुनें")}</option>{(openBillQueries[index]?.data?.bills ?? []).map((candidate) => <option key={`${candidate.kind}:${candidate.id}`} value={`${candidate.kind}:${candidate.id}`}>{candidate.party?.name} · {candidate.referenceNumber} · {candidate.remainingAmount}</option>)}</select>
+                      : <Input placeholder={bill.referenceType === "ON_ACCOUNT" ? copy("Advance / on account", "अग्रिम / खाते में") : copy("New bill reference", "नया बिल संदर्भ")} readOnly={bill.referenceType === "ON_ACCOUNT"} {...form.register(`lines.${index}.bills.${billIndex}.referenceNumber`)} />}
                     <Input type="date" aria-label={copy("Bill due date", "बिल देय तिथि")} {...form.register(`lines.${index}.bills.${billIndex}.dueDate`)} />
                     <div className="flex gap-1"><Input inputMode="decimal" placeholder={copy("Amount", "राशि")} {...form.register(`lines.${index}.bills.${billIndex}.amount`)} /><Button type="button" variant="ghost" onClick={() => form.setValue(`lines.${index}.bills`, (form.getValues(`lines.${index}.bills`) ?? []).filter((_, itemIndex) => itemIndex !== billIndex))}>×</Button></div>
                   </div>)}
+                  {openBillQueries[index]?.isPending && <p role="status" className="text-xs text-slate-600">{copy("Loading open bills…", "खुले बिल लोड हो रहे हैं…")}</p>}
+                  {openBillQueries[index]?.isError && <p role="alert" className="text-xs text-red-700">{openBillQueries[index]?.error instanceof Error ? openBillQueries[index].error.message : copy("Could not load open bills.", "खुले बिल लोड नहीं हो सके।")}</p>}
+                  {openBillQueries[index]?.data?.bills.length === 0 && <p className="text-xs text-slate-600">{copy("No open invoices for this ledger.", "इस खाते में कोई खुला बिल नहीं है।")}</p>}
+                  <Input aria-label={copy("Search open bills", "खुले बिल खोजें")} placeholder={copy("Filter open references", "खुले संदर्भ फ़िल्टर करें")} value={billSearch} onChange={(event) => setBillSearch(event.target.value)} />
                   <Button type="button" variant="secondary" size="sm" onClick={() => form.setValue(`lines.${index}.bills`, [...(form.getValues(`lines.${index}.bills`) ?? []), { referenceType: "NEW", referenceNumber: "", dueDate: "", amount: "0.00" }])}>{copy("Add bill allocation", "बिल आवंटन जोड़ें")}</Button>
                 </div>
                 <div className="space-y-2 rounded-lg bg-slate-50 p-3">
@@ -255,12 +332,12 @@ export function VouchersManager({
         {vouchers.isError && <p role="alert" className="py-8 text-sm text-red-700">{vouchers.error.message}</p>}
         {vouchers.data?.vouchers.length === 0 && <p className="py-8 text-sm text-slate-500">{copy("No vouchers match these filters.", "इन फ़िल्टर से कोई वाउचर नहीं मिला।")}</p>}
         {!!vouchers.data?.vouchers.length && <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">{copy("Voucher", "वाउचर")}</th><th>{copy("Date", "तिथि")}</th><th>{copy("Type / status", "प्रकार / स्थिति")}</th><th>{copy("Narration", "विवरण")}</th><th className="text-right">{copy("Debit", "नामे")}</th><th className="text-right">{copy("Credit", "जमा")}</th><th className="text-right">{copy("Lines", "पंक्तियाँ")}</th></tr></thead>
+          <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">{copy("Voucher", "वाउचर")}</th><th>{copy("Date", "तिथि")}</th><th>{copy("Type / status", "प्रकार / स्थिति")}</th><th>{copy("Narration / reference", "विवरण / संदर्भ")}</th><th className="text-right">{copy("Debit", "नामे")}</th><th className="text-right">{copy("Credit", "जमा")}</th><th className="text-right">{copy("Lines", "पंक्तियाँ")}</th></tr></thead>
             <tbody className="divide-y">{vouchers.data.vouchers.map((voucher) => <tr key={voucher.id}>
               <td className="py-3 font-medium"><Link href={`/dashboard/vouchers/${voucher.id}`} className="text-blue-700 hover:underline">{voucher.voucherNumber}</Link></td>
               <td>{voucher.voucherDate}</td>              <td>{voucherTypeLabel(voucher.type, copy)}<span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-xs">{voucherStatusLabel(voucher.status, copy)}</span>{voucher.approvalStatus === "PENDING" && <span className="ml-2 text-amber-800">{copy("Approval pending", "अनुमोदन लंबित")}</span>}</td>
-              <td className="max-w-xs truncate">{voucher.narration || "—"}</td><td className="text-right tabular-nums">{voucher.debitTotal}</td><td className="text-right tabular-nums">{voucher.creditTotal}</td><td className="text-right">{voucher.lineCount}</td>
+              <td className="max-w-xs truncate">{voucher.narration || "—"}{voucher.paymentMethod && <span className="block text-xs text-slate-500">{voucher.paymentMethod}{voucher.paymentReference ? ` · ${voucher.paymentReference}` : ""}</span>}</td><td className="text-right tabular-nums">{voucher.debitTotal}</td><td className="text-right tabular-nums">{voucher.creditTotal}</td><td className="text-right">{voucher.lineCount}</td>
             </tr>)}</tbody>
           </table>
         </div>}

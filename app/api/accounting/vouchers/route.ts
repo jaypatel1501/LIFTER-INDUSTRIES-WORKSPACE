@@ -37,6 +37,7 @@ export async function GET(request: Request) {
         OR: [
           { voucherNumber: { contains: query.search, mode: "insensitive" } },
           { narration: { contains: query.search, mode: "insensitive" } },
+          { paymentReference: { contains: query.search, mode: "insensitive" } },
         ],
       } : {}),
     };
@@ -64,6 +65,8 @@ export async function GET(request: Request) {
         approvalStatus: voucher.approvalStatus,
         voucherDate: voucher.voucherDate.toISOString().slice(0, 10),
         narration: voucher.narration,
+        paymentMethod: voucher.paymentMethod,
+        paymentReference: voucher.paymentReference,
         debitTotal: voucher.lines.reduce((sum, line) => sum.plus(line.debit), new Prisma.Decimal(0)).toString(),
         creditTotal: voucher.lines.reduce((sum, line) => sum.plus(line.credit), new Prisma.Decimal(0)).toString(),
         lineCount: voucher._count.lines,
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
     return successResponse({ voucher: result.voucher, replayed: result.replayed }, result.replayed ? 200 : 201);
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return errorResponse(new ConflictError("Voucher number or idempotency key already exists"));
+      return errorResponse(new ConflictError("Voucher number, payment reference, or idempotency key already exists"));
     }
     return errorResponse(error);
   }
