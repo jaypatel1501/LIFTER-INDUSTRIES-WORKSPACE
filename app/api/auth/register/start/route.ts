@@ -47,7 +47,7 @@ export async function POST(request: Request) {
           preferredLanguage: input.preferredLanguage,
           locale: input.preferredLanguage === "HINDI" ? "HI" : input.preferredLanguage === "BILINGUAL" ? "BILINGUAL" : "EN",
           status: "ACTIVE",
-          onboardingStatus: "MOBILE_VERIFICATION_PENDING",
+          onboardingStatus: "COMPANY_SETUP_PENDING",
         },
         select: { id: true },
       });

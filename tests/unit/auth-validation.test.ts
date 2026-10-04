@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   emailSchema,
   normalizeEmail,
@@ -7,6 +8,7 @@ import {
   registrationStartSchema,
 } from "@/lib/validation/auth";
 import { POST as registerStart } from "@/app/api/auth/register/start/route";
+import { POST as createCompany } from "@/app/api/auth/register/create-company/route";
 import { prisma } from "@/lib/prisma";
 
 describe("authentication input validation", () => {
@@ -63,17 +65,18 @@ describe("authentication input validation", () => {
   });
 
   it("creates a user immediately without requiring email verification", async () => {
-    const email = `register-no-email-${Date.now()}@example.test`;
+    const email = `register-no-email-${randomUUID()}@example.test`;
+    const mobile = `+919876543${String(Math.floor(Math.random() * 900) + 100)}`;
     delete process.env.EMAIL_SERVER;
     delete process.env.EMAIL_FROM;
 
     const response = await registerStart(new Request("http://localhost/api/auth/register/start", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-forwarded-for": `127.0.0.${Math.floor(Math.random() * 250) + 1}` },
       body: JSON.stringify({
         name: "No Email Verification User",
         email,
-        mobile: "+919876543210",
+        mobile,
         password: "Strong!Pass123",
         confirmPassword: "Strong!Pass123",
         preferredLanguage: "ENGLISH",
@@ -97,6 +100,66 @@ describe("authentication input validation", () => {
 
     if (user) {
       await prisma.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("creates a company without requiring email or mobile verification", async () => {
+    const email = `register-company-no-verify-${randomUUID()}@example.test`;
+    const mobile = `+919876543${String(Math.floor(Math.random() * 900) + 100)}`;
+
+    const startResponse = await registerStart(new Request("http://localhost/api/auth/register/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": `127.0.0.${Math.floor(Math.random() * 250) + 1}` },
+      body: JSON.stringify({
+        name: "Company Setup User",
+        email,
+        mobile,
+        password: "Strong!Pass123",
+        confirmPassword: "Strong!Pass123",
+        preferredLanguage: "ENGLISH",
+        acceptTerms: true,
+      }),
+    }));
+
+    expect(startResponse.status).toBe(202);
+
+    const companyResponse = await createCompany(new Request("http://localhost/api/auth/register/create-company", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": `127.0.0.${Math.floor(Math.random() * 250) + 1}` },
+      body: JSON.stringify({
+        email,
+        companyName: "No Verification Company",
+        legalName: "No Verification Company Pvt Ltd",
+        country: "India",
+        currency: "INR",
+        timezone: "Asia/Kolkata",
+        financialYearStartMonth: 4,
+        booksBeginningDate: "2026-04-01",
+      }),
+    }));
+
+    const companyPayload = await companyResponse.json();
+    expect(companyResponse.status).toBe(201);
+    expect(companyPayload.success).toBe(true);
+    expect(companyPayload.data.companyId).toBeTruthy();
+
+    const createdUser = await prisma.user.findUnique({
+      where: { normalizedEmail: email },
+      include: { memberships: { include: { company: true } } },
+    });
+
+    expect(createdUser).not.toBeNull();
+    expect(createdUser?.emailVerifiedAt).toBeNull();
+    expect(createdUser?.mobileVerifiedAt).toBeNull();
+    expect(createdUser?.memberships.length).toBeGreaterThan(0);
+
+    if (createdUser) {
+      await prisma.membershipRole.deleteMany({ where: { membershipId: { in: createdUser.memberships.map((membership) => membership.id) } } });
+      await prisma.membership.deleteMany({ where: { userId: createdUser.id } });
+      await prisma.auditLog.deleteMany({ where: { companyId: { in: createdUser.memberships.map((membership) => membership.companyId) } } });
+      await prisma.company.deleteMany({ where: { id: { in: createdUser.memberships.map((membership) => membership.companyId) } } });
+      await prisma.user.delete({ where: { id: createdUser.id } });
+      await prisma.registrationAttempt.deleteMany({ where: { email } });
     }
   });
 });

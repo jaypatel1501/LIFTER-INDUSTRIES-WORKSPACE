@@ -21,28 +21,59 @@ export async function POST(request: Request) {
   try {
     const input = schema.parse(await readJson(request));
     const attempt = await prisma.registrationAttempt.findFirst({
-      where: { email: input.email, status: "MOBILE_VERIFIED" },
+      where: {
+        email: input.email,
+        status: { in: ["STARTED", "EMAIL_VERIFIED", "MOBILE_VERIFIED", "COMPLETED"] },
+      },
       orderBy: { createdAt: "desc" },
     });
-    if (!attempt) throw new ValidationError("Complete email and mobile verification before creating a company.");
+    if (!attempt) throw new ValidationError("Complete your registration before creating a company.");
+
     const created = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email: attempt.email,
-          normalizedEmail: attempt.email,
-          name: attempt.name,
-          mobile: attempt.mobileNumber,
-          mobileNumber: attempt.mobileNumber,
-          normalizedMobileNumber: attempt.mobileNumber,
-          passwordHash: attempt.passwordHash,
-          emailVerifiedAt: attempt.emailVerifiedAt,
-          mobileVerifiedAt: attempt.mobileVerifiedAt,
-          status: "ACTIVE",
-          onboardingStatus: "COMPLETED",
-          preferredLanguage: attempt.preferredLanguage,
-          locale: attempt.preferredLanguage === "HINDI" ? "HI" : attempt.preferredLanguage === "BILINGUAL" ? "BILINGUAL" : "EN",
+      let user = await tx.user.findFirst({
+        where: {
+          OR: [
+            { normalizedEmail: input.email },
+            { email: input.email },
+          ],
         },
       });
+
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            email: attempt.email,
+            normalizedEmail: attempt.email,
+            name: attempt.name,
+            mobile: attempt.mobileNumber,
+            mobileNumber: attempt.mobileNumber,
+            normalizedMobileNumber: attempt.mobileNumber,
+            passwordHash: attempt.passwordHash,
+            emailVerifiedAt: attempt.emailVerifiedAt,
+            mobileVerifiedAt: attempt.mobileVerifiedAt,
+            status: "ACTIVE",
+            onboardingStatus: "COMPANY_SETUP_PENDING",
+            preferredLanguage: attempt.preferredLanguage,
+            locale: attempt.preferredLanguage === "HINDI" ? "HI" : attempt.preferredLanguage === "BILINGUAL" ? "BILINGUAL" : "EN",
+          },
+        });
+      } else {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            name: attempt.name || user.name,
+            mobile: attempt.mobileNumber || user.mobile,
+            mobileNumber: attempt.mobileNumber || user.mobileNumber,
+            normalizedMobileNumber: attempt.mobileNumber || user.normalizedMobileNumber,
+            emailVerifiedAt: attempt.emailVerifiedAt ?? user.emailVerifiedAt,
+            mobileVerifiedAt: attempt.mobileVerifiedAt ?? user.mobileVerifiedAt,
+            onboardingStatus: "COMPANY_SETUP_PENDING",
+            preferredLanguage: attempt.preferredLanguage ?? user.preferredLanguage,
+            locale: attempt.preferredLanguage === "HINDI" ? "HI" : attempt.preferredLanguage === "BILINGUAL" ? "BILINGUAL" : user.locale,
+          },
+        });
+      }
+
       const company = await tx.company.create({
         data: {
           name: input.companyName,
@@ -80,6 +111,7 @@ export async function POST(request: Request) {
       }, tx);
       return { userId: user.id, companyId: company.id };
     });
+
     return successResponse({ message: "Company created successfully.", userId: created.userId, companyId: created.companyId }, 201);
   } catch (error) {
     return errorResponse(error);
