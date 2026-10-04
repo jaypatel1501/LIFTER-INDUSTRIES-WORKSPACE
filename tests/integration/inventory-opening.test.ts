@@ -25,7 +25,10 @@ databaseTest("opening stock is idempotent, balanced and isolated to its company"
   const context = { companyId: company.id, userId: user.id };
 
   try {
-    const defaults = await prisma.$transaction((tx) => ensureDefaultInventoryMasters(tx, company.id));
+    const defaults = await prisma.$transaction(
+      (tx) => ensureDefaultInventoryMasters(tx, company.id),
+      { timeout: 30_000 },
+    );
     const input = stockItemCreateSchema.parse({
       name: "Opening Stock Test",
       code: `OPEN-${suffix.slice(0, 8).toUpperCase()}`,
@@ -67,26 +70,38 @@ databaseTest("opening stock is idempotent, balanced and isolated to its company"
     expect(debit.toString()).toBe(balance.value.toString());
     expect(otherTenantItem).toBeNull();
   } finally {
-    await prisma.$transaction(async (tx) => {
-      await tx.auditLog.deleteMany({ where: { companyId: company.id } });
-      await tx.inventoryMovement.deleteMany({ where: { companyId: company.id } });
-      await tx.stockBalance.deleteMany({ where: { companyId: company.id } });
-      await tx.inventoryBatch.deleteMany({ where: { companyId: company.id } });
-      await tx.itemUnitConversion.deleteMany({ where: { companyId: company.id } });
-      await tx.stockItem.deleteMany({ where: { companyId: company.id } });
-      await tx.voucherLine.deleteMany({ where: { companyId: company.id } });
-      await tx.accountingVoucher.deleteMany({ where: { companyId: company.id } });
-      await tx.ledger.deleteMany({ where: { companyId: company.id } });
-      await tx.ledgerGroup.updateMany({ where: { companyId: company.id }, data: { parentId: null } });
-      await tx.ledgerGroup.deleteMany({ where: { companyId: company.id } });
-      await tx.stockGroup.updateMany({ where: { companyId: company.id }, data: { parentId: null } });
-      await tx.stockGroup.deleteMany({ where: { companyId: company.id } });
-      await tx.unitConversion.deleteMany({ where: { companyId: company.id } });
-      await tx.unitOfMeasure.deleteMany({ where: { companyId: company.id } });
-      await tx.warehouse.deleteMany({ where: { companyId: company.id } });
-      await tx.company.delete({ where: { id: company.id } });
-      await tx.company.delete({ where: { id: otherCompany.id } });
-      await tx.user.delete({ where: { id: user.id } });
-    });
+    const tenant = { companyId: company.id };
+
+    await prisma.auditLog.deleteMany({ where: tenant });
+    await prisma.inventoryMovement.deleteMany({ where: tenant });
+    await prisma.stockBalance.deleteMany({ where: tenant });
+    await prisma.billWiseEntry.deleteMany({ where: tenant });
+    await prisma.billWiseOpening.deleteMany({ where: tenant });
+    await prisma.ledgerTransaction.deleteMany({ where: tenant });
+    await prisma.taxTransaction.deleteMany({ where: tenant });
+    await prisma.voucherTaxDetail.deleteMany({ where: tenant });
+    await prisma.costAllocation.deleteMany({ where: tenant });
+    await prisma.voucherStockDetail.deleteMany({ where: tenant });
+    await prisma.voucherAttachment.deleteMany({ where: tenant });
+    await prisma.voucherApprovalAction.deleteMany({ where: tenant });
+    await prisma.voucherAuditEvent.deleteMany({ where: tenant });
+    await prisma.dayBookEntry.deleteMany({ where: tenant });
+
+    await prisma.itemUnitConversion.deleteMany({ where: tenant });
+    await prisma.inventoryBatch.deleteMany({ where: tenant });
+    await prisma.stockItem.deleteMany({ where: tenant });
+    await prisma.voucherLine.deleteMany({ where: tenant });
+    await prisma.accountingVoucher.deleteMany({ where: tenant });
+    await prisma.ledger.deleteMany({ where: tenant });
+    await prisma.ledgerGroup.updateMany({ where: tenant, data: { parentId: null } });
+    await prisma.ledgerGroup.deleteMany({ where: tenant });
+    await prisma.stockGroup.updateMany({ where: tenant, data: { parentId: null } });
+    await prisma.stockGroup.deleteMany({ where: tenant });
+    await prisma.unitConversion.deleteMany({ where: tenant });
+    await prisma.unitOfMeasure.deleteMany({ where: tenant });
+    await prisma.warehouse.updateMany({ where: tenant, data: { parentId: null } });
+    await prisma.warehouse.deleteMany({ where: tenant });
+    await prisma.company.deleteMany({ where: { id: { in: [company.id, otherCompany.id] } } });
+    await prisma.user.deleteMany({ where: { id: user.id } });
   }
 });

@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashIdempotencyKey } from "@/lib/idempotency";
 import { withTransaction } from "@/lib/transactions";
-import { inventoryOpeningStockSchema } from "@/lib/validation/inventory";
+import { inventoryOpeningStockSchema, isDecimalWithinPrecision } from "@/lib/validation/inventory";
 import type { z } from "zod";
 
 type MovementInput = z.infer<typeof inventoryOpeningStockSchema>;
@@ -71,7 +71,7 @@ export async function postInventoryMovement(
   ]);
   if (!item) throw new NotFoundError("Stock item not found in the active company");
   if (!warehouse) throw new NotFoundError("Active warehouse not found in the active company");
-  if (!options.input.quantity.match(new RegExp(`^\\d{1,12}(?:\\.\\d{1,${item.baseUnit.precision}})?$`))) {
+  if (!isDecimalWithinPrecision(options.input.quantity, 12, item.baseUnit.precision)) {
     throw new ValidationError(`Quantity exceeds the base unit precision of ${item.baseUnit.precision} decimal places`);
   }
   if (item.batchTracked && !options.input.batchNumber) {

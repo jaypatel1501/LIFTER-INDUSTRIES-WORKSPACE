@@ -4,6 +4,10 @@ const optionalUrl = z.string().url().optional();
 const optionalHttpsUrl = z.string().url()
   .refine((value) => value.startsWith("https://"), "URL must use HTTPS")
   .optional();
+const emailFromSchema = z.string().refine(
+  (value) => z.email().safeParse(value).success || /^[^<>\r\n]+ <[^<>\s@]+@[^<>\s@]+>$/.test(value),
+  "EMAIL_FROM must be an email address or a display name followed by an email address",
+);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -29,7 +33,7 @@ const envSchema = z.object({
     (value) => value.startsWith("smtp://") || value.startsWith("smtps://"),
     "EMAIL_SERVER must use smtp:// or smtps://",
   ).optional(),
-  EMAIL_FROM: z.string().email().optional(),
+  EMAIL_FROM: emailFromSchema.optional(),
   DEV_OTP_MODE: z.string().optional().transform((value) => value === "true").default(false),
   GST_API_BASE_URL: optionalHttpsUrl,
   GST_API_CLIENT_ID: z.string().optional(),

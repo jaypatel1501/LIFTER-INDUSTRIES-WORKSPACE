@@ -1,6 +1,7 @@
 import {
   inventoryOpeningStockSchema,
   inventoryListQuerySchema,
+  isDecimalWithinPrecision,
   stockGroupCreateSchema,
   stockItemCreateSchema,
   unitConversionCreateSchema,
@@ -9,6 +10,28 @@ import {
 import { COMPANY_PERMISSION_KEYS, OWNER_PERMISSIONS } from "@/lib/company-permissions";
 
 describe("inventory master validation", () => {
+  it("validates quantity integer digits and unit precision without dynamic regexes", () => {
+    for (const quantity of ["1", "10"]) {
+      expect(isDecimalWithinPrecision(quantity, 12, 0)).toBe(true);
+    }
+    for (const quantity of ["1.0", "1.25"]) {
+      expect(isDecimalWithinPrecision(quantity, 12, 0)).toBe(false);
+    }
+
+    for (const quantity of ["1", "1.2", "1.25", "1.00"]) {
+      expect(isDecimalWithinPrecision(quantity, 12, 2)).toBe(true);
+    }
+    expect(isDecimalWithinPrecision("1.234", 12, 2)).toBe(false);
+    expect(isDecimalWithinPrecision("1.234", 12, 3)).toBe(true);
+    expect(isDecimalWithinPrecision("1.2345", 12, 3)).toBe(false);
+  });
+
+  it("rejects invalid quantity formats and more than 12 integer digits", () => {
+    for (const quantity of ["", "-1", ".5", "1.", "1..2", "1.2.3", "1e2", "1000000000000"]) {
+      expect(isDecimalWithinPrecision(quantity, 12, 3)).toBe(false);
+    }
+  });
+
   it("validates stock identifiers, GST, prices, thresholds, units and opening date", () => {
     const valid = stockItemCreateSchema.safeParse({
       name: "Organic Wheat",

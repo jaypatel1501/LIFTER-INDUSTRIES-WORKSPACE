@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+export function isDecimalWithinPrecision(value: string, integerDigits: number, decimalPlaces: number) {
+  if (!Number.isInteger(integerDigits) || integerDigits < 1 ||
+      !Number.isInteger(decimalPlaces) || decimalPlaces < 0) {
+    return false;
+  }
+
+  const parts = value.split(".");
+  if (parts.length > 2) return false;
+  const [integerPart, fractionPart] = parts;
+  if (!integerPart || integerPart.length > integerDigits || !/^\d+$/.test(integerPart)) {
+    return false;
+  }
+  if (fractionPart === undefined) return true;
+  return decimalPlaces > 0 && fractionPart.length > 0 &&
+    fractionPart.length <= decimalPlaces && /^\d+$/.test(fractionPart);
+}
+
 const positiveDecimal = (integerDigits: number, decimalPlaces: number) =>
   z.string().regex(new RegExp(`^\\d{1,${integerDigits}}(?:\\.\\d{1,${decimalPlaces}})?$`))
     .refine((value) => Number(value) > 0, "Value must be greater than zero");

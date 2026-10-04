@@ -31,7 +31,7 @@ describe("email service configuration", () => {
 
   it("sends registration and password reset emails through the existing SMTP client", async () => {
     process.env.EMAIL_SERVER = "smtps://smtp-user:smtp-password@mail.example.test:465";
-    process.env.EMAIL_FROM = "noreply@example.test";
+    process.env.EMAIL_FROM = "ERP <no-reply@example.test>";
 
     const { sendRegistrationVerificationEmail, sendPasswordResetEmail } = await import("@/lib/email");
 
@@ -46,7 +46,7 @@ describe("email service configuration", () => {
     if (!clients[0] || !clients[1]) throw new Error("SMTP clients were not created");
 
     expect(clients[0].sendAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ from: "noreply@example.test", to: "user@example.test" }),
+      expect.objectContaining({ from: "ERP <no-reply@example.test>", to: "user@example.test" }),
     );
     expect(clients[1].sendAsync).toHaveBeenCalledWith(
       expect.objectContaining({ subject: "Reset your ERP System password" }),
