@@ -95,9 +95,18 @@ export function getLoginUrl() {
 }
 
 function getApplicationUrl() {
-  const currentDeploymentUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : undefined;
-  const baseUrl = currentDeploymentUrl ?? env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL ?? "http://localhost:3000";
-  return baseUrl.replace(/\/$/, "");
+  const configuredCanonicalUrl = env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL;
+  if (configuredCanonicalUrl) {
+    return configuredCanonicalUrl.replace(/\/$/, "");
+  }
+
+  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`.replace(/\/$/, "");
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`.replace(/\/$/, "");
+  }
+
+  return "http://localhost:3000";
 }

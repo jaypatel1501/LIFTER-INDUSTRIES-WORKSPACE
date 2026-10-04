@@ -42,6 +42,28 @@ describe("authentication input validation", () => {
     expect(passwordSchema.safeParse("Weak123").success).toBe(false);
   });
 
+  it("keeps the canonical production URL instead of a Git preview host", async () => {
+    const originalAuthUrl = process.env.AUTH_URL;
+    const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+    const originalVercelUrl = process.env.VERCEL_URL;
+
+    process.env.AUTH_URL = "https://lifter-industries-workspace-api.vercel.app";
+    process.env.NEXT_PUBLIC_APP_URL = "https://lifter-industries-workspace-api.vercel.app";
+    process.env.VERCEL_URL = "lifter-industries-workspace-api-git-main-jp-d161.vercel.app";
+
+    jest.resetModules();
+
+    try {
+      const { getLoginUrl } = await import("@/lib/security");
+      expect(getLoginUrl()).toBe("https://lifter-industries-workspace-api.vercel.app/login");
+    } finally {
+      if (originalAuthUrl === undefined) delete process.env.AUTH_URL; else process.env.AUTH_URL = originalAuthUrl;
+      if (originalAppUrl === undefined) delete process.env.NEXT_PUBLIC_APP_URL; else process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
+      if (originalVercelUrl === undefined) delete process.env.VERCEL_URL; else process.env.VERCEL_URL = originalVercelUrl;
+      jest.resetModules();
+    }
+  });
+
   it("rejects invalid registration attempts and role escalation values", () => {
     expect(registrationStartSchema.safeParse({
       name: "",
