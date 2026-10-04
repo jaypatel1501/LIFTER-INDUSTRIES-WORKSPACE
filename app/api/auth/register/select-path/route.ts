@@ -13,10 +13,10 @@ export async function POST(request: Request) {
   try {
     const input = schema.parse(await readJson(request));
     const attempt = await prisma.registrationAttempt.findFirst({
-      where: { email: input.email, status: { in: ["EMAIL_VERIFIED", "MOBILE_VERIFIED"] } },
+      where: { email: input.email, status: { in: ["STARTED", "EMAIL_VERIFIED", "MOBILE_VERIFIED", "COMPLETED"] } },
       orderBy: { createdAt: "desc" },
     });
-    if (!attempt) throw new ValidationError("Your registration must be verified before choosing a company path.");
+    if (!attempt) throw new ValidationError("Complete your registration before choosing a company path.");
     await prisma.registrationAttempt.update({
       where: { id: attempt.id },
       data: { selectedOnboardingPath: input.path },

@@ -11,7 +11,7 @@ export default function RegisterPage() {
         <div className="max-w-xl pb-10">
           <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-blue-300">Business workspace</p>
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">Create your secure ERP workspace.</h1>
-          <p className="mt-5 max-w-md leading-7 text-slate-300">Start with a verified account and choose whether to create a company or join an existing one.</p>
+          <p className="mt-5 max-w-md leading-7 text-slate-300">Start with a secure account and choose whether to create a company or join an existing one.</p>
         </div>
         <p className="text-sm text-slate-400">Built for Indian businesses · English and हिंदी</p>
       </section>

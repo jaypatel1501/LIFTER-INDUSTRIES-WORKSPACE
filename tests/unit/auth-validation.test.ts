@@ -6,6 +6,8 @@ import {
   passwordSchema,
   registrationStartSchema,
 } from "@/lib/validation/auth";
+import { POST as registerStart } from "@/app/api/auth/register/start/route";
+import { prisma } from "@/lib/prisma";
 
 describe("authentication input validation", () => {
   it("normalizes email addresses before lookup", () => {
@@ -58,5 +60,43 @@ describe("authentication input validation", () => {
       preferredLanguage: "ENGLISH",
       acceptTerms: true,
     }).success).toBe(false);
+  });
+
+  it("creates a user immediately without requiring email verification", async () => {
+    const email = `register-no-email-${Date.now()}@example.test`;
+    delete process.env.EMAIL_SERVER;
+    delete process.env.EMAIL_FROM;
+
+    const response = await registerStart(new Request("http://localhost/api/auth/register/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "No Email Verification User",
+        email,
+        mobile: "+919876543210",
+        password: "Strong!Pass123",
+        confirmPassword: "Strong!Pass123",
+        preferredLanguage: "ENGLISH",
+        acceptTerms: true,
+      }),
+    }));
+
+    const payload = await response.json();
+    expect(response.status).toBe(202);
+    expect(payload.success).toBe(true);
+
+    const user = await prisma.user.findUnique({
+      where: { normalizedEmail: email },
+      select: { id: true, email: true, status: true, emailVerifiedAt: true },
+    });
+
+    expect(user).not.toBeNull();
+    expect(user?.email).toBe(email);
+    expect(user?.status).toBe("ACTIVE");
+    expect(user?.emailVerifiedAt).toBeNull();
+
+    if (user) {
+      await prisma.user.delete({ where: { id: user.id } });
+    }
   });
 });

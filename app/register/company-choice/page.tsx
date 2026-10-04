@@ -24,7 +24,7 @@ function CompanyChoiceContent() {
     });
     const body = await response.json();
     if (!response.ok) {
-      window.alert(body?.error?.message ?? "Please complete registration verification first.");
+      window.alert(body?.error?.message ?? "Please complete your registration before choosing a company path.");
       return;
     }
     if (path === "CREATE_COMPANY") {

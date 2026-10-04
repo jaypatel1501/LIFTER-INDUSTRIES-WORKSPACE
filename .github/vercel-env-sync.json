@@ -1,0 +1,37 @@
+{
+  "description": "Production variables managed by GitHub Actions for Vercel sync. Add new names here and to .env.example when introducing a new environment variable.",
+  "requiredSecrets": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "AUTH_SECRET",
+    "EMAIL_SERVER",
+    "EMAIL_FROM",
+    "BLOB_READ_WRITE_TOKEN"
+  ],
+  "requiredVars": [
+    "AUTH_URL",
+    "NEXT_PUBLIC_APP_URL",
+    "NEXT_PUBLIC_APP_NAME"
+  ],
+  "optionalSecrets": [
+    "SMS_API_KEY",
+    "SMS_SENDER_ID",
+    "GST_API_CLIENT_SECRET",
+    "EINVOICE_API_CLIENT_SECRET",
+    "EWAYBILL_API_CLIENT_SECRET",
+    "WHATSAPP_API_TOKEN",
+    "SEED_ADMIN_PASSWORD"
+  ],
+  "optionalVars": [
+    "SMS_PROVIDER",
+    "SMS_API_URL",
+    "GST_API_BASE_URL",
+    "GST_API_CLIENT_ID",
+    "EINVOICE_API_BASE_URL",
+    "EINVOICE_API_CLIENT_ID",
+    "EWAYBILL_API_BASE_URL",
+    "EWAYBILL_API_CLIENT_ID",
+    "WHATSAPP_PHONE_NUMBER_ID",
+    "SEED_ADMIN_EMAIL"
+  ]
+}

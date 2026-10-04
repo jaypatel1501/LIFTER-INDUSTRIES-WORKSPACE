@@ -1,6 +1,10 @@
-import { SMTPClient } from "emailjs";
 import { env, requireEnv } from "@/lib/env";
 import { EmailConfigurationError } from "@/lib/errors";
+
+async function getSmtpClient() {
+  const { SMTPClient } = await import("emailjs");
+  return SMTPClient;
+}
 
 export function requireEmailConfiguration() {
   const missingVariables = (["EMAIL_SERVER", "EMAIL_FROM"] as const)
@@ -66,6 +70,7 @@ async function sendMail(to: string, subject: string, text: string, html: string)
   const configuration = requireEmailConfiguration();
   const server = new URL(configuration.server);
   const secure = server.protocol === "smtps:";
+  const SMTPClient = await getSmtpClient();
   const client = new SMTPClient({
     host: server.hostname,
     port: Number(server.port) || (secure ? 465 : 587),

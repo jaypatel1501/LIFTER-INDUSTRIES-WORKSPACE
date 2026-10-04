@@ -17,8 +17,7 @@ export async function POST(request: Request) {
     const attempt = await prisma.registrationAttempt.findFirst({
       where: {
         mobileNumber: input.mobile,
-        emailVerifiedAt: { not: null },
-        status: { in: ["EMAIL_VERIFIED", "MOBILE_VERIFIED"] },
+        status: { in: ["STARTED", "EMAIL_VERIFIED", "MOBILE_VERIFIED"] },
       },
       orderBy: { createdAt: "desc" },
     });

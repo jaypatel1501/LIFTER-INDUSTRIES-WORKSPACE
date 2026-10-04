@@ -49,8 +49,7 @@ export function RegisterForm() {
         throw new Error(body?.error?.message ?? "Registration could not be started.");
       }
       sessionStorage.setItem("erp-registration-password", values.password);
-      const query = new URLSearchParams({ email: values.email, mobile: values.mobile });
-      router.push(`/register/verify-email?${query.toString()}`);
+      router.push(`/register/company-choice?email=${encodeURIComponent(values.email)}`);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Registration could not be started.");

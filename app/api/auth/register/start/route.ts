@@ -6,7 +6,6 @@ import { requestIp, requestUserAgent, readJson } from "@/lib/request";
 import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createOpaqueToken, hashSecret } from "@/lib/security";
 import { registrationStartSchema } from "@/lib/validation/auth";
-import { sendRegistrationVerificationEmail } from "@/lib/email";
 import { getVerificationUrl, REGISTRATION_LIFETIME_MS } from "@/lib/registration";
 
 export async function POST(request: Request) {
@@ -36,6 +35,23 @@ export async function POST(request: Request) {
     const expiresAt = new Date(Date.now() + REGISTRATION_LIFETIME_MS);
     const token = createOpaqueToken();
     const registration = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          normalizedEmail: email,
+          name: input.name,
+          mobile,
+          mobileNumber: mobile,
+          normalizedMobileNumber: mobile,
+          passwordHash,
+          preferredLanguage: input.preferredLanguage,
+          locale: input.preferredLanguage === "HINDI" ? "HI" : input.preferredLanguage === "BILINGUAL" ? "BILINGUAL" : "EN",
+          status: "ACTIVE",
+          onboardingStatus: "MOBILE_VERIFICATION_PENDING",
+        },
+        select: { id: true },
+      });
+
       const candidateExisting = await tx.registrationAttempt.findFirst({
         where: { email, status: { in: ["STARTED", "EMAIL_VERIFIED", "MOBILE_VERIFIED"] } },
         orderBy: { createdAt: "desc" },
@@ -51,6 +67,7 @@ export async function POST(request: Request) {
               expiresAt,
               status: "STARTED",
               requestIp: ip,
+              createdUserId: user.id,
             },
           })
         : await tx.registrationAttempt.create({
@@ -63,6 +80,7 @@ export async function POST(request: Request) {
               expiresAt,
               status: "STARTED",
               requestIp: ip,
+              createdUserId: user.id,
             },
           });
       await tx.emailVerificationToken.create({
@@ -83,16 +101,17 @@ export async function POST(request: Request) {
           userAgent: userAgent ?? null,
         },
       });
-      return candidate;
+      return { registration: candidate, userId: user.id };
     });
 
-    await sendRegistrationVerificationEmail(email, getVerificationUrl(token), input.name);
-
     return successResponse({
-      message: "Check your email to verify your account.",
-      registrationId: registration.id,
+      message: "Account created successfully. Complete company setup to continue.",
+      registrationId: registration.registration.id,
+      userId: registration.userId,
       email,
       mobile,
+      nextStep: "/register/company-choice",
+      verificationUrl: getVerificationUrl(token),
     }, 202);
   } catch (error) {
     return errorResponse(error);
