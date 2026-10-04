@@ -95,7 +95,9 @@ export function getLoginUrl() {
 }
 
 function getApplicationUrl() {
-  const baseUrl = env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL;
-  if (!baseUrl) throw new Error("NEXT_PUBLIC_APP_URL or AUTH_URL is required");
-  return baseUrl;
+  const currentDeploymentUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : undefined;
+  const baseUrl = currentDeploymentUrl ?? env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL ?? "http://localhost:3000";
+  return baseUrl.replace(/\/$/, "");
 }
