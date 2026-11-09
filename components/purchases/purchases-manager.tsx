@@ -24,8 +24,8 @@ const optionsSchema = z.object({ success: z.literal(true), data: z.object({
   costCentres: z.array(z.object({ id: z.string(), name: z.string() })),
 }) });
 
-type DraftLine = { itemId: string; description: string; unit: string; quantity: string; unitRate: string; gstRate: string; warehouseId: string; batchNumber: string; expiryDate: string; costCentreId: string };
-const blankLine = (): DraftLine => ({ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", warehouseId: "", batchNumber: "", expiryDate: "", costCentreId: "" });
+type DraftLine = { itemId: string; description: string; unit: string; quantity: string; unitRate: string; gstRate: string; cessRate: string; isTaxInclusive: boolean; reverseCharge: boolean; warehouseId: string; batchNumber: string; expiryDate: string; costCentreId: string };
+const blankLine = (): DraftLine => ({ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", cessRate: "0", isTaxInclusive: false, reverseCharge: false, warehouseId: "", batchNumber: "", expiryDate: "", costCentreId: "" });
 
 export function PurchasesManager({ locale, companyName, canCreate, canIssue, canPost, canCancel }: {
   locale: Locale; companyName: string; canCreate: boolean; canIssue: boolean; canPost: boolean; canCancel: boolean;
@@ -91,7 +91,9 @@ export function PurchasesManager({ locale, companyName, canCreate, canIssue, can
         const item = items.find((candidate) => candidate.id === line.itemId);
         return { ...(line.itemId ? { itemId: line.itemId } : {}), description: line.description || item?.name || "Service",
           unit: item?.baseUnit.symbol ?? line.unit, quantity: line.quantity, unitRate: line.unitRate,
-          gstRate: line.gstRate || item?.gstRate || "0", ...(line.itemId ? { warehouseId: line.warehouseId, batchNumber: line.batchNumber, expiryDate: line.expiryDate } : {}),
+          gstRate: line.gstRate || item?.gstRate || "0", cessRate: line.cessRate,
+          isTaxInclusive: line.isTaxInclusive, reverseCharge: line.reverseCharge,
+          ...(line.itemId ? { warehouseId: line.warehouseId, batchNumber: line.batchNumber, expiryDate: line.expiryDate } : {}),
           ...(line.costCentreId ? { costCentreId: line.costCentreId } : {}) };
       }),
     };
@@ -191,6 +193,10 @@ export function PurchasesManager({ locale, companyName, canCreate, canIssue, can
                 <label className="grid gap-1 text-xs">{copy("Description", "विवरण")}<Input required value={line.description} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, description: event.target.value } : row))} /></label>
                 <label className="grid gap-1 text-xs">{copy("Quantity", "मात्रा")}<Input required inputMode="decimal" value={line.quantity} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row))} /></label>
                 <label className="grid gap-1 text-xs">{copy("Rate", "दर")}<Input required inputMode="decimal" value={line.unitRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, unitRate: event.target.value } : row))} /></label>
+                <label className="grid gap-1 text-xs">{copy("GST %", "जीएसटी %")}<Input inputMode="decimal" value={line.gstRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, gstRate: event.target.value } : row))} /></label>
+                <label className="grid gap-1 text-xs">{copy("Cess %", "उपकर %")}<Input inputMode="decimal" value={line.cessRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, cessRate: event.target.value } : row))} /></label>
+                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={line.isTaxInclusive} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, isTaxInclusive: event.target.checked } : row))} />{copy("Rate includes GST", "दर में GST शामिल")}</label>
+                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={line.reverseCharge} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reverseCharge: event.target.checked } : row))} />{copy("Reverse charge", "रिवर्स चार्ज")}</label>
                 {selected && <label className="grid gap-1 text-xs">{copy("Godown", "गोदाम")}<select className="h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={line.warehouseId} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, warehouseId: event.target.value } : row))}><option value="">{copy("Select", "चुनें")}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></label>}
                 {selected?.batchTracked && <label className="grid gap-1 text-xs">{copy("Batch", "बैच")}<Input required value={line.batchNumber} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, batchNumber: event.target.value } : row))} /></label>}
                 {selected?.batchTracked && <label className="grid gap-1 text-xs">{copy("Expiry", "समाप्ति")}<Input type="date" value={line.expiryDate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, expiryDate: event.target.value } : row))} /></label>}

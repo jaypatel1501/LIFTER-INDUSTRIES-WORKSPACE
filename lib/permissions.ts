@@ -22,7 +22,7 @@ export async function requireCompanyContext(companyId?: string) {
     select: {
       id: true,
       companyId: true,
-      company: { select: { id: true, name: true, currency: true, timezone: true, booksBeginningDate: true } },
+      company: { select: { id: true, name: true, currency: true, timezone: true, booksBeginningDate: true, stateCode: true } },
     },
   });
   if (!membership) throw new AuthorizationError("Active company membership required");

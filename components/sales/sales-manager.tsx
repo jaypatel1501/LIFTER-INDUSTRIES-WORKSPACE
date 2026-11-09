@@ -44,7 +44,7 @@ const optionsSchema = z.object({
 
 type DraftLine = {
   itemId: string; description: string; unit: string; quantity: string; unitRate: string; gstRate: string;
-  warehouseId: string; batchNumber: string;
+  cessRate: string; isTaxInclusive: boolean; reverseCharge: boolean; warehouseId: string; batchNumber: string;
 };
 
 export function SalesManager({ locale, companyName, canCreate, canIssue, canPost, canSend, canCancel }: {
@@ -66,7 +66,7 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
   const [roundOff, setRoundOff] = useState("0");
   const [invoicePaymentMode, setInvoicePaymentMode] = useState<"CREDIT" | "CASH">("CREDIT");
   const [paymentLedgerId, setPaymentLedgerId] = useState("");
-  const [lines, setLines] = useState<DraftLine[]>([{ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", warehouseId: "", batchNumber: "" }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", cessRate: "0", isTaxInclusive: false, reverseCharge: false, warehouseId: "", batchNumber: "" }]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
   const documentsQuery = useQuery({
@@ -93,8 +93,10 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
   const warehouses = optionsQuery.data?.warehouses ?? [];
   const pages = Math.max(1, Math.ceil((documentsQuery.data?.total ?? 0) / 20));
   const lineTotal = useMemo(() => lines.reduce((sum, line) => {
-    const base = Number(line.quantity) * Number(line.unitRate);
-    return sum + base + base * Number(line.gstRate || 0) / 100;
+    const gross = Number(line.quantity) * Number(line.unitRate);
+    const multiplier = 1 + (Number(line.gstRate || 0) + Number(line.cessRate || 0)) / 100;
+    const taxable = line.isTaxInclusive ? gross / multiplier : gross;
+    return sum + (line.reverseCharge ? taxable : line.isTaxInclusive ? gross : taxable * multiplier);
   }, 0), [lines]);
 
   async function request(path: string, body?: unknown) {
@@ -130,6 +132,9 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
           unit: item?.baseUnit.symbol ?? line.unit,
           quantity: line.quantity,
           unitRate: line.unitRate,
+          cessRate: line.cessRate,
+          isTaxInclusive: line.isTaxInclusive,
+          reverseCharge: line.reverseCharge,
           ...(line.itemId ? {
             ...(line.warehouseId ? { warehouseId: line.warehouseId } : {}),
             batchNumber: line.batchNumber,
@@ -151,7 +156,7 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
       setFreight("0");
       setOtherCharges("0");
       setRoundOff("0");
-      setLines([{ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", warehouseId: "", batchNumber: "" }]);
+      setLines([{ itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", cessRate: "0", isTaxInclusive: false, reverseCharge: false, warehouseId: "", batchNumber: "" }]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save the sales document.");
     } finally {
@@ -263,6 +268,9 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
                   <label className="grid gap-1 text-xs">{copy("Quantity", "मात्रा")}<Input required inputMode="decimal" value={line.quantity} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row))} /></label>
                   <label className="grid gap-1 text-xs">{copy("Rate", "दर")}<Input required inputMode="decimal" value={line.unitRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, unitRate: event.target.value } : row))} /></label>
                   {!selected && <label className="grid gap-1 text-xs">{copy("GST %", "जीएसटी %")}<Input inputMode="decimal" value={line.gstRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, gstRate: event.target.value } : row))} /></label>}
+                  <label className="grid gap-1 text-xs">{copy("Cess %", "उपकर %")}<Input inputMode="decimal" value={line.cessRate} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, cessRate: event.target.value } : row))} /></label>
+                  <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={line.isTaxInclusive} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, isTaxInclusive: event.target.checked } : row))} />{copy("Rate includes GST", "दर में GST शामिल")}</label>
+                  <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={line.reverseCharge} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, reverseCharge: event.target.checked } : row))} />{copy("Reverse charge", "रिवर्स चार्ज")}</label>
                   {selected && <label className="grid gap-1 text-xs">{copy("Godown", "गोदाम")}
                     <select className="h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={line.warehouseId} onChange={(event) => setLines((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, warehouseId: event.target.value } : row))}>
                       <option value="">{copy("Select godown", "गोदाम चुनें")}</option>
@@ -274,7 +282,7 @@ export function SalesManager({ locale, companyName, canCreate, canIssue, canPost
                 </div>;
               })}
               <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" variant="secondary" onClick={() => setLines((current) => [...current, { itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", warehouseId: "", batchNumber: "" }])}>{copy("Add line", "पंक्ति जोड़ें")}</Button>
+                <Button type="button" variant="secondary" onClick={() => setLines((current) => [...current, { itemId: "", description: "", unit: "EA", quantity: "1", unitRate: "0", gstRate: "0", cessRate: "0", isTaxInclusive: false, reverseCharge: false, warehouseId: "", batchNumber: "" }])}>{copy("Add line", "पंक्ति जोड़ें")}</Button>
                 <span className="text-sm text-slate-600">{copy("Indicative total", "अनुमानित कुल")}: {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(lineTotal)}</span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">

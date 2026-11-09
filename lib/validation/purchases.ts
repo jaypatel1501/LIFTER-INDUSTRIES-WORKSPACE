@@ -17,6 +17,9 @@ export const purchaseLineInputSchema = z.object({
   discountPercent: z.string().regex(/^\d{1,3}(?:\.\d{1,4})?$/).default("0")
     .refine((value) => Number(value) <= 100),
   gstRate: z.string().regex(/^\d{1,3}(?:\.\d{1,4})?$/).refine((value) => Number(value) <= 100).optional(),
+  cessRate: z.string().regex(/^\d{1,3}(?:\.\d{1,4})?$/).refine((value) => Number(value) <= 100).default("0"),
+  isTaxInclusive: z.boolean().default(false),
+  reverseCharge: z.boolean().default(false),
   warehouseId: z.string().min(1).max(64).optional(),
   batchNumber: optionalText(80),
   manufacturingDate: z.string().date().optional().or(z.literal("")),

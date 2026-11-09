@@ -5,6 +5,8 @@ import { ensureDefaultChart } from "@/lib/accounting/default-chart";
 import { createPostedVoucherWithinTransaction, reversePostedVoucher } from "@/lib/accounting/voucher-platform";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashIdempotencyKey } from "@/lib/idempotency";
+import { calculateGST, isUnionTerritoryGSTState } from "@/lib/gst/engine";
+import { assertGSTPeriodOpen } from "@/lib/gst/period";
 import { postInventoryMovement } from "@/lib/inventory/post-movement";
 import { withTransaction } from "@/lib/transactions";
 import type { purchaseDocumentCreateSchema, purchaseConvertSchema, purchasePostSchema } from "@/lib/validation/purchases";
@@ -45,10 +47,6 @@ function taxesForLine(taxable: Prisma.Decimal, rate: Prisma.Decimal, intraState:
   };
 }
 
-function isUnionTerritory(code: string | null) {
-  return ["04", "26", "31", "34", "35", "38"].includes(code ?? "");
-}
-
 async function nextNumber(tx: Prisma.TransactionClient, companyId: string, type: PurchaseDocumentType, documentDate: Date) {
   const periodKey = fiscalKey(documentDate);
   const prefixes: Record<PurchaseDocumentType, string> = {
@@ -85,7 +83,7 @@ async function resolveLines(
   lines: PurchaseLineInput[],
 ) {
   const intraState = Boolean(company.stateCode && company.stateCode === supplier.stateCode);
-  const unionTerritory = isUnionTerritory(company.stateCode);
+  const unionTerritory = isUnionTerritoryGSTState(company.stateCode);
   const resolved = [];
   for (const [index, line] of lines.entries()) {
     const item = line.itemId ? await tx.stockItem.findFirst({
@@ -107,9 +105,21 @@ async function resolveLines(
     const gross = cents(quantity.mul(unitRate));
     const discountPercent = decimal(line.discountPercent ?? "0");
     const discountAmount = cents(gross.mul(discountPercent).div(100));
-    const taxableAmount = gross.minus(discountAmount);
-    if (taxableAmount.lessThanOrEqualTo(0)) throw new ValidationError("Each purchase line must have a positive taxable amount");
     const gstRate = line.gstRate !== undefined ? decimal(line.gstRate) : item?.gstRate ?? decimal(0);
+    const cessRate = decimal(line.cessRate ?? "0");
+    const calculation = calculateGST({
+      unitRate: line.unitRate,
+      quantity: line.quantity,
+      discountPercent: line.discountPercent ?? "0",
+      gstRate: gstRate.toString(),
+      cessRate: cessRate.toString(),
+      isTaxInclusive: line.isTaxInclusive ?? false,
+      reverseCharge: line.reverseCharge ?? false,
+      companyStateCode: company.stateCode ?? "",
+      placeOfSupplyStateCode: supplier.stateCode ?? "",
+    });
+    const taxableAmount = decimal(calculation.taxableAmount);
+    if (taxableAmount.lessThanOrEqualTo(0)) throw new ValidationError("Each purchase line must have a positive taxable amount");
     const tax = taxesForLine(taxableAmount, gstRate, intraState, unionTerritory);
     resolved.push({
       lineNumber: index + 1, itemId: item?.id ?? null, costCentreId: line.costCentreId || null,
@@ -117,6 +127,9 @@ async function resolveLines(
       quantity, unitRate, discountPercent, discountAmount, taxableAmount, gstRate,
       cgstRate: tax.cgstRate, sgstRate: tax.sgstRate, utgstRate: tax.utgstRate, igstRate: tax.igstRate,
       cgstAmount: tax.cgst, sgstAmount: tax.sgst, utgstAmount: tax.utgst, igstAmount: tax.igst,
+      cessRate, cessAmount: decimal(calculation.cessAmount),
+      isTaxInclusive: line.isTaxInclusive ?? false,
+      reverseCharge: line.reverseCharge ?? false,
       warehouseId: line.warehouseId || null, batchNumber: line.batchNumber || null,
       manufacturingDate: line.manufacturingDate ? date(line.manufacturingDate) : null,
       expiryDate: line.expiryDate ? date(line.expiryDate) : null,
@@ -133,14 +146,16 @@ async function appendEvent(tx: Prisma.TransactionClient, actor: Actor, documentI
 }
 
 function aggregateAmounts(lines: Awaited<ReturnType<typeof resolveLines>>) {
+  const taxableLines = lines.filter((line) => !line.reverseCharge);
   return {
     subtotal: cents(lines.reduce((sum, line) => sum.plus(line.quantity.mul(line.unitRate)), decimal(0))),
     discountAmount: cents(lines.reduce((sum, line) => sum.plus(line.discountAmount), decimal(0))),
     taxableAmount: cents(lines.reduce((sum, line) => sum.plus(line.taxableAmount), decimal(0))),
-    cgstAmount: cents(lines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0))),
-    sgstAmount: cents(lines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0))),
-    utgstAmount: cents(lines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0))),
-    igstAmount: cents(lines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0))),
+    cgstAmount: cents(taxableLines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0))),
+    sgstAmount: cents(taxableLines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0))),
+    utgstAmount: cents(taxableLines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0))),
+    igstAmount: cents(taxableLines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0))),
+    cessAmount: cents(taxableLines.reduce((sum, line) => sum.plus(line.cessAmount), decimal(0))),
   };
 }
 
@@ -162,7 +177,7 @@ async function createDraftInTransaction(tx: Prisma.TransactionClient, actor: Act
   const otherCharges = decimal(input.otherCharges);
   const roundOff = decimal(input.roundOff);
   const totalAmount = cents(amounts.taxableAmount.plus(amounts.cgstAmount).plus(amounts.sgstAmount).plus(amounts.utgstAmount)
-    .plus(amounts.igstAmount).plus(freight).plus(otherCharges).plus(roundOff));
+    .plus(amounts.igstAmount).plus(amounts.cessAmount).plus(freight).plus(otherCharges).plus(roundOff));
   if (totalAmount.lessThanOrEqualTo(0)) throw new ValidationError("Purchase document total must be greater than zero");
   const { seriesId, number } = await nextNumber(tx, actor.companyId, input.documentType, documentDate);
   const doc = await tx.purchaseDocument.create({
@@ -275,6 +290,9 @@ export async function convertPurchaseDocument(actor: Actor, sourceDocumentId: st
         itemId: parentLine.itemId ?? undefined, sourceLineId: parentLine.id, costCentreId: parentLine.costCentreId ?? undefined,
         description: parentLine.description, unit: parentLine.unit, quantity: requested.quantity, unitRate: parentLine.unitRate.toString(),
         discountPercent: parentLine.discountPercent.toString(), gstRate: parentLine.gstRate.toString(),
+        cessRate: parentLine.cessRate.toString(),
+        isTaxInclusive: parentLine.isTaxInclusive,
+        reverseCharge: parentLine.reverseCharge,
         warehouseId: requested.warehouseId ?? parentLine.warehouseId ?? undefined,
         batchNumber: requested.batchNumber ?? parentLine.batchNumber ?? "",
         manufacturingDate: requested.manufacturingDate ?? parentLine.manufacturingDate?.toISOString().slice(0, 10) ?? "",
@@ -292,7 +310,8 @@ export async function convertPurchaseDocument(actor: Actor, sourceDocumentId: st
     const freight = decimal(0);
     const otherCharges = decimal(0);
     const roundOff = decimal(0);
-    const totalAmount = cents(amounts.taxableAmount.plus(amounts.cgstAmount).plus(amounts.sgstAmount).plus(amounts.utgstAmount).plus(amounts.igstAmount));
+    const totalAmount = cents(amounts.taxableAmount.plus(amounts.cgstAmount).plus(amounts.sgstAmount).plus(amounts.utgstAmount)
+      .plus(amounts.igstAmount).plus(amounts.cessAmount));
     const type = input.documentType;
     const { seriesId, number } = await nextNumber(tx, actor.companyId, type, date(input.documentDate));
     const supplierInvoiceNumber = input.supplierInvoiceNumber || null;
@@ -329,6 +348,12 @@ async function ensurePurchaseAccounts(tx: Prisma.TransactionClient, companyId: s
     { code: "INPUT_SGST", name: "Input SGST", groupId: chart.groups.get("CURRENT_ASSETS")!, type: "TAX" as const, costCentreEnabled: false },
     { code: "INPUT_UTGST", name: "Input UTGST", groupId: chart.groups.get("CURRENT_ASSETS")!, type: "TAX" as const, costCentreEnabled: false },
     { code: "INPUT_IGST", name: "Input IGST", groupId: chart.groups.get("CURRENT_ASSETS")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "INPUT_CESS", name: "Input Cess", groupId: chart.groups.get("CURRENT_ASSETS")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "OUTPUT_CGST", name: "Output CGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "OUTPUT_SGST", name: "Output SGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "OUTPUT_UTGST", name: "Output UTGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "OUTPUT_IGST", name: "Output IGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const, costCentreEnabled: false },
+    { code: "OUTPUT_CESS", name: "Output Cess", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const, costCentreEnabled: false },
   ];
   for (const account of definitions) {
     const ledger = await tx.ledger.upsert({
@@ -390,6 +415,12 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
     const document = await tx.purchaseDocument.findFirst({ where: { id: documentId, companyId: actor.companyId, status: "DRAFT" },
       include: { party: true, sourceDocument: { select: { id: true, documentType: true, status: true, supplierInvoiceNumber: true, paymentMode: true, paymentLedgerId: true, voucherId: true } }, lines: { orderBy: { lineNumber: "asc" }, include: { sourceLine: true } } } });
     if (!document) throw new NotFoundError("Draft purchase document not found in the current company");
+    if (document.documentType !== "RECEIPT_NOTE") {
+      const gstDate = document.documentType === "PURCHASE_INVOICE" && document.supplierInvoiceDate
+        ? document.supplierInvoiceDate
+        : document.documentDate;
+      await assertGSTPeriodOpen(tx, actor.companyId, gstDate);
+    }
     if (!["RECEIPT_NOTE", "PURCHASE_INVOICE", "PURCHASE_RETURN"].includes(document.documentType)) throw new ValidationError("Issue a purchase order before converting it to a receipt or invoice");
     if (document.documentType === "RECEIPT_NOTE" && document.sourceDocument && !["ORDERED", "PARTIALLY_RECEIVED", "RECEIVED", "PARTIALLY_INVOICED"].includes(document.sourceDocument.status)) throw new ConflictError("The source purchase order is not available for receipt");
     if (document.documentType === "PURCHASE_INVOICE" && (!document.supplierInvoiceNumber || !document.supplierInvoiceDate)) throw new ValidationError("Supplier invoice number and date are required before posting");
@@ -409,8 +440,53 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
     const costs = new Map<string, Prisma.Decimal>();
     const stockLineData: { line: typeof document.lines[number]; unitCost: Prisma.Decimal; quantity: Prisma.Decimal; value: Prisma.Decimal; direction: "IN" | "OUT"; type: "PURCHASE" | "PURCHASE_RETURN" }[] = [];
     const voucherDate = document.documentDate.toISOString().slice(0, 10);
+    const rcmTaxEntries: {
+      type: "CGST" | "SGST" | "UTGST" | "IGST" | "CESS";
+      inputCode: string;
+      outputCode: string;
+      amount: Prisma.Decimal;
+      taxableAmount: Prisma.Decimal;
+      rate: Prisma.Decimal;
+      inputDescription: string;
+      outputDescription: string;
+    }[] = [];
+    const addReverseChargeTax = (line: typeof document.lines[number]) => {
+      if (!line.reverseCharge) return;
+      const reverse = document.documentType === "PURCHASE_RETURN";
+      const components = [
+        ["CGST", "INPUT_CGST", "OUTPUT_CGST", line.cgstAmount, line.cgstRate],
+        ["SGST", "INPUT_SGST", "OUTPUT_SGST", line.sgstAmount, line.sgstRate],
+        ["UTGST", "INPUT_UTGST", "OUTPUT_UTGST", line.utgstAmount, line.utgstRate],
+        ["IGST", "INPUT_IGST", "OUTPUT_IGST", line.igstAmount, line.igstRate],
+        ["CESS", "INPUT_CESS", "OUTPUT_CESS", line.cessAmount, line.cessRate],
+      ] as const;
+      for (const [type, inputCode, outputCode, amount, rate] of components) {
+        if (amount.isZero()) continue;
+        const inputDescription = `${reverse ? "Reverse charge input reversal" : "Reverse charge input"} ${type} · ${document.documentNumber} · ${line.lineNumber}`;
+        const outputDescription = `${reverse ? "Reverse charge liability reversal" : "Reverse charge liability"} ${type} · ${document.documentNumber} · ${line.lineNumber}`;
+        const inputEntry = { ledgerId: chart.accounts.get(inputCode)!, description: inputDescription };
+        const outputEntry = { ledgerId: chart.accounts.get(outputCode)!, description: outputDescription };
+        if (reverse) {
+          debitLines.push({ ...outputEntry, debit: amount.toString(), credit: "0" });
+          creditLines.push({ ...inputEntry, debit: "0", credit: amount.toString() });
+        } else {
+          debitLines.push({ ...inputEntry, debit: amount.toString(), credit: "0" });
+          creditLines.push({ ...outputEntry, debit: "0", credit: amount.toString() });
+        }
+        rcmTaxEntries.push({
+          type, inputCode, outputCode, amount, taxableAmount: line.taxableAmount, rate,
+          inputDescription, outputDescription,
+        });
+      }
+    };
     const addInputTax = (side: "DEBIT" | "CREDIT") => {
-      for (const [kind, code, amount] of [["CGST", "INPUT_CGST", document.cgstAmount], ["SGST", "INPUT_SGST", document.sgstAmount], ["UTGST", "INPUT_UTGST", document.utgstAmount], ["IGST", "INPUT_IGST", document.igstAmount]] as const) {
+      for (const [kind, code, amount] of [
+        ["CGST", "INPUT_CGST", document.cgstAmount],
+        ["SGST", "INPUT_SGST", document.sgstAmount],
+        ["UTGST", "INPUT_UTGST", document.utgstAmount],
+        ["IGST", "INPUT_IGST", document.igstAmount],
+        ["CESS", "INPUT_CESS", document.cessAmount],
+      ] as const) {
         if (amount.isZero()) continue;
         const line = { ledgerId: chart.accounts.get(code)!, description: `${side === "DEBIT" ? "Input" : "Reversal of input"} ${kind} · ${document.documentNumber}`,
           debit: side === "DEBIT" ? amount.toString() : "0", credit: side === "CREDIT" ? amount.toString() : "0" };
@@ -434,6 +510,7 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
       }
       if (receiptValue.isZero()) throw new ValidationError("Receipt note must include stock items");
     } else if (document.documentType === "PURCHASE_INVOICE") {
+      for (const line of document.lines) addReverseChargeTax(line);
       const fromReceipt = document.sourceDocument?.documentType === "RECEIPT_NOTE";
       if (fromReceipt && document.sourceDocument?.status !== "POSTED") throw new ConflictError("The source receipt note is not posted");
       if (!fromReceipt) {
@@ -445,6 +522,7 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
             const ledgerId = chart.accounts.get("PURCHASE_EXPENSE")!;
             debitLines.push({ ledgerId, description: `Purchase expense · ${document.documentNumber} · ${line.lineNumber}`, debit: line.taxableAmount.toString(), credit: "0" });
           } else {
+            for (const line of document.lines) addReverseChargeTax(line);
             if (!line.warehouseId) throw new ValidationError(`Select a godown for ${line.description}`);
             if (line.batchNumber === null && (await tx.stockItem.findFirst({ where: { id: line.itemId, companyId: actor.companyId, batchTracked: true }, select: { id: true } }))) throw new ValidationError(`A batch number is required for ${line.description}`);
             const value = cents(line.taxableAmount.plus(freightByLine.get(line.id) ?? decimal(0)));
@@ -497,7 +575,8 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
       }
       addInputTax("CREDIT");
       const lineValue = stockLineData.reduce((sum, entry) => sum.plus(entry.value), decimal(0));
-      const difference = document.totalAmount.minus(lineValue).minus(document.cgstAmount).minus(document.sgstAmount).minus(document.utgstAmount).minus(document.igstAmount);
+      const difference = document.totalAmount.minus(lineValue).minus(document.cgstAmount).minus(document.sgstAmount)
+        .minus(document.utgstAmount).minus(document.igstAmount).minus(document.cessAmount);
       if (difference.greaterThan(0)) creditLines.push({ ledgerId: chart.accounts.get("PURCHASE_EXPENSE")!, description: `Purchase return charges · ${document.documentNumber}`, debit: "0", credit: difference.toString() });
       if (difference.lessThan(0)) debitLines.push({ ledgerId: chart.accounts.get("PURCHASE_EXPENSE")!, description: `Purchase return price variance · ${document.documentNumber}`, debit: difference.abs().toString(), credit: "0" });
     }
@@ -510,18 +589,49 @@ export async function postPurchaseDocument(actor: Actor, documentId: string, inp
     const taxSpecs = [
       ["CGST", "INPUT_CGST", document.cgstAmount], ["SGST", "INPUT_SGST", document.sgstAmount],
       ["UTGST", "INPUT_UTGST", document.utgstAmount], ["IGST", "INPUT_IGST", document.igstAmount],
+      ["CESS", "INPUT_CESS", document.cessAmount],
     ] as const;
+    const gstTransactionDate = document.documentType === "PURCHASE_INVOICE" && document.supplierInvoiceDate
+      ? document.supplierInvoiceDate
+      : document.documentDate;
     for (const taxLine of taxSpecs) {
       const [type, code, amount] = taxLine;
       if (amount.isZero()) continue;
-      const persisted = persistedLines.find((line) => line.ledgerId === chart.accounts.get(code));
+      const description = document.documentType === "PURCHASE_RETURN"
+        ? `Reversal of input ${type} · ${document.documentNumber}`
+        : `Input ${type} · ${document.documentNumber}`;
+      const persisted = persistedLines.find((line) =>
+        line.ledgerId === chart.accounts.get(code) && line.description === description,
+      );
       if (!persisted) continue;
       const taxRate = document.taxableAmount.isZero() ? decimal(0) : amount.mul(100).div(document.taxableAmount).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
       await tx.voucherTaxDetail.create({ data: { companyId: actor.companyId, voucherLineId: persisted.id, taxLedgerId: persisted.ledgerId,
         taxType: type, taxableAmount: document.taxableAmount, taxAmount: amount, rate: taxRate } });
       await tx.taxTransaction.create({ data: { companyId: actor.companyId, voucherId: voucher.id, voucherLineId: persisted.id,
         ledgerId: persisted.ledgerId, taxType: type, taxableAmount: document.taxableAmount, taxAmount: amount, rate: taxRate,
-        transactionDate: document.documentDate, isReversal: document.documentType === "PURCHASE_RETURN" } });
+        transactionDate: gstTransactionDate, isReversal: document.documentType === "PURCHASE_RETURN" } });
+    }
+    for (const entry of rcmTaxEntries) {
+      for (const side of ["input", "output"] as const) {
+        const code = side === "input" ? entry.inputCode : entry.outputCode;
+        const description = side === "input" ? entry.inputDescription : entry.outputDescription;
+        const persisted = persistedLines.find((line) => line.ledgerId === chart.accounts.get(code) && line.description === description);
+        if (!persisted) throw new Error(`Posted purchase voucher is missing reverse-charge ${side} tax line`);
+        await tx.voucherTaxDetail.create({
+          data: {
+            companyId: actor.companyId, voucherLineId: persisted.id, taxLedgerId: persisted.ledgerId,
+            taxType: entry.type, taxableAmount: entry.taxableAmount, taxAmount: entry.amount, rate: entry.rate,
+          },
+        });
+        await tx.taxTransaction.create({
+          data: {
+            companyId: actor.companyId, voucherId: voucher.id, voucherLineId: persisted.id,
+            ledgerId: persisted.ledgerId, taxType: entry.type, taxableAmount: entry.taxableAmount,
+            taxAmount: entry.amount, rate: entry.rate, transactionDate: gstTransactionDate,
+            isReversal: document.documentType === "PURCHASE_RETURN",
+          },
+        });
+      }
     }
     for (const data of stockLineData) {
       const persisted = persistedLines.find((line) => (line.description ?? "").endsWith(`· ${data.line.lineNumber}`) && line.ledgerId === chart.inventoryLedgerId);
@@ -612,6 +722,7 @@ export async function cancelPurchaseDocument(actor: Actor, documentId: string, r
     }
     const document = await tx.purchaseDocument.findFirst({ where: { id: documentId, companyId: actor.companyId }, include: { lines: true } });
     if (!document) throw new NotFoundError("Purchase document not found in the current company");
+    if (document.documentType !== "RECEIPT_NOTE") await assertGSTPeriodOpen(tx, actor.companyId, date(reversalDate));
     if (["CANCELLED", "REVERSED"].includes(document.status)) throw new ConflictError("This purchase document has already been cancelled or reversed");
     const children = await tx.purchaseDocument.findMany({ where: { companyId: actor.companyId, sourceDocumentId: document.id, status: { notIn: ["CANCELLED", "REVERSED"] } }, select: { id: true } });
     if (children.length) throw new ConflictError("Cancel downstream purchase documents before cancelling this source");

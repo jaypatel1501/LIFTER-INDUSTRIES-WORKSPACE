@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gstinSchema } from "@/lib/gst/engine";
 
 const positiveAmount = z.string().regex(/^\d{1,16}(?:\.\d{1,2})?$/);
 const toMinorUnits = (value: string) => {
@@ -14,9 +15,7 @@ const interestRate = z.string().regex(/^\d{1,3}(?:\.\d{1,4})?$/)
   .refine((value) => Number(value) <= 100, "Interest rate cannot exceed 100%");
 const optionalText = (max: number) => z.string().trim().max(max).optional().or(z.literal(""));
 const pan = z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional().or(z.literal(""));
-const gstin = z.string().trim().toUpperCase()
-  .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/)
-  .optional().or(z.literal(""));
+const gstin = gstinSchema.optional().or(z.literal(""));
 
 export const openingBalanceSchema = z.object({
   amount: positiveAmount,

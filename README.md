@@ -13,6 +13,7 @@ Enterprise-oriented Indian business ERP foundation built on Next.js App Router, 
 - Central company-scoped voucher numbering and financial-year checks, balanced double-entry lines, idempotent posting/cancellation/reversal, approval history, bill-wise/tax/cost-centre details, atomic ledger and stock postings, Day Book events, private voucher attachments, voucher filters and number-series management.
 - Quotation acceptance and conversion to sales orders, partial delivery/invoicing checks, cash/credit invoices, CGST/SGST/UTGST/IGST calculation, batch/godown stock issue, output-tax and receivable postings, customer credit-limit checks, sales register/profitability reports, bilingual print-ready invoices, SMTP and WhatsApp adapters.
 - Purchase orders, receipt notes and supplier invoices with partial order fulfillment, supplier invoice references, cash/credit settlement, batch/expiry and godown receipts, proportional freight capitalization, input GST, supplier payables/bill-wise references, purchase returns and purchase register/analysis.
+- Company-scoped GST registration and GSTIN/HSN/SAC validation, Decimal-based CGST/SGST/UTGST/IGST/cess and reverse-charge calculations, tax-inclusive pricing, period locks, note adjustments, tax registers, GSTR-1/GSTR-3B datasets and CSV exports, and private GSTR-2B reconciliation uploads.
 - Instrumented payment/receipt/contra vouchers, bank/cash transfers, partial multi-bill settlements and advances, customer/supplier credit/debit notes, sales returns, open-outstanding reports, print-ready vouchers and filtered CSV export.
 - Action-level role/group matrix, user detail views, scoped failed-login/session history with revocation, searchable audit trail, and English/Hindi/bilingual management screens.
 - PostgreSQL schema, foreign keys, constraints, indexes, migrations, Prisma singleton and transaction helper.
@@ -33,7 +34,7 @@ Requirements: Node.js 22 (Next.js 16 requires Node.js 20.9 or newer), npm, and D
 
 The seed refuses to run with `NODE_ENV=production`. `.env.example` contains variable names only; do not commit local environment files or credentials.
 
-See [local development](./docs/local-development.md), [database migrations](./docs/database-migrations.md), [Vercel deployment](./docs/vercel-deployment.md), the [foundation API reference](./docs/api-foundation.md), the [voucher API and posting guide](./docs/api-vouchers.md), the [sales workflow API guide](./docs/api-sales.md), and the [purchase workflow API guide](./docs/api-purchases.md).
+See [local development](./docs/local-development.md), [database migrations](./docs/database-migrations.md), [Vercel deployment](./docs/vercel-deployment.md), the [foundation API reference](./docs/api-foundation.md), the [voucher API and posting guide](./docs/api-vouchers.md), the [sales workflow API guide](./docs/api-sales.md), the [purchase workflow API guide](./docs/api-purchases.md), and the [GST compliance guide](./docs/gst-compliance.md).
 
 ## Quality checks
 

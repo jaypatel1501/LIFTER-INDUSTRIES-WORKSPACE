@@ -53,6 +53,7 @@ test("company management pages require an authenticated session", async ({ page 
     "/dashboard/sales-reports",
     "/dashboard/purchases",
     "/dashboard/purchase-reports",
+    "/dashboard/gst",
     "/dashboard/sales/sales-test",
     "/dashboard/sales/sales-test/print",
     "/dashboard/vouchers/voucher-test",

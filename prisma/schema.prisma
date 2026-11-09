@@ -99,6 +99,48 @@ enum VoucherTaxType {
   OTHER
 }
 
+enum GSTRegistrationType {
+  REGULAR
+  COMPOSITION
+  SEZ
+  ISD
+  TDS
+  TCS
+  UNREGISTERED
+}
+
+enum GSTAdapterMode {
+  SANDBOX
+  LIVE
+}
+
+enum GSTAdjustmentType {
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum GSTAdjustmentSide {
+  SALES
+  PURCHASE
+}
+
+enum GSTReconciliationStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum GSTReconciliationLineStatus {
+  MATCHED
+  MISMATCH
+  MISSING_IN_BOOKS
+}
+
+enum GSTPeriodAction {
+  LOCK
+  UNLOCK
+}
+
 enum BillReferenceType {
   NEW
   AGAINST_REF
@@ -260,6 +302,10 @@ model User {
   purchaseDocumentsCreated PurchaseDocument[]      @relation("PurchaseDocumentCreator")
   purchaseDocumentsIssued  PurchaseDocument[]      @relation("PurchaseDocumentIssuer")
   purchaseDocumentEvents   PurchaseDocumentEvent[] @relation("PurchaseDocumentEventActor")
+  gstPeriodsLocked         GSTPeriod[]             @relation("GSTPeriodLocker")
+  gstUploads               GSTReconciliationUpload[] @relation("GSTUploadActor")
+  gstAdjustments            GSTAdjustment[]         @relation("GSTAdjustmentActor")
+  gstPeriodEvents            GSTPeriodEvent[]        @relation("GSTPeriodEventActor")
 
   @@index([mobile])
 }
@@ -323,10 +369,159 @@ model Company {
   purchaseDocuments       PurchaseDocument[]
   purchaseDocumentLines   PurchaseDocumentLine[]
   purchaseDocumentEvents  PurchaseDocumentEvent[]
+  gstRegistration         GSTRegistration?
+  gstPeriods              GSTPeriod[]
+  gstPeriodEvents         GSTPeriodEvent[]
+  gstReconciliationUploads GSTReconciliationUpload[]
+  gstReconciliationLines  GSTReconciliationLine[]
+  gstAdjustments          GSTAdjustment[]
 
   @@index([name])
   @@index([pan])
   @@index([stateCode])
+}
+
+model GSTRegistration {
+  id                 String               @id @default(cuid())
+  companyId          String               @unique
+  gstin              String               @unique
+  legalName          String
+  tradeName          String?
+  stateCode          String
+  registrationType   GSTRegistrationType @default(REGULAR)
+  effectiveFrom      DateTime             @db.Date
+  filingFrequency    String               @default("MONTHLY")
+  adapterMode        GSTAdapterMode       @default(SANDBOX)
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([stateCode, isActive])
+}
+
+model GSTPeriod {
+  id          String    @id @default(cuid())
+  companyId   String
+  periodKey   String
+  isLocked    Boolean   @default(false)
+  lockedAt    DateTime?
+  lockedById  String?
+  lockReason  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lockedBy    User?     @relation("GSTPeriodLocker", fields: [lockedById], references: [id], onDelete: SetNull)
+  events      GSTPeriodEvent[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, periodKey])
+  @@index([companyId, isLocked, periodKey])
+}
+
+model GSTPeriodEvent {
+  id             String          @id @default(cuid())
+  companyId      String
+  periodId       String
+  actorId        String
+  action         GSTPeriodAction
+  reason         String
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime        @default(now())
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  period         GSTPeriod       @relation(fields: [companyId, periodId], references: [companyId, id], onDelete: Cascade)
+  actor          User            @relation("GSTPeriodEventActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, periodId, createdAt])
+}
+
+model GSTReconciliationUpload {
+  id             String                @id @default(cuid())
+  companyId      String
+  uploadedById   String
+  periodKey      String
+  fileName       String
+  contentType    String
+  blobUrl        String
+  status         GSTReconciliationStatus @default(PROCESSING)
+  rowCount       Int                   @default(0)
+  matchedCount   Int                   @default(0)
+  mismatchCount  Int                   @default(0)
+  missingCount   Int                   @default(0)
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy     User                  @relation("GSTUploadActor", fields: [uploadedById], references: [id], onDelete: Restrict)
+  rows           GSTReconciliationLine[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, periodKey, createdAt])
+  @@index([companyId, status])
+}
+
+model GSTReconciliationLine {
+  id                 String                    @id @default(cuid())
+  companyId          String
+  uploadId           String
+  rowNumber          Int
+  supplierGstin      String?
+  invoiceNumber      String
+  invoiceDate        DateTime?                 @db.Date
+  taxableAmount      Decimal                   @db.Decimal(18, 2)
+  cgstAmount         Decimal                   @default(0) @db.Decimal(18, 2)
+  sgstAmount         Decimal                   @default(0) @db.Decimal(18, 2)
+  utgstAmount        Decimal                   @default(0) @db.Decimal(18, 2)
+  igstAmount         Decimal                   @default(0) @db.Decimal(18, 2)
+  cessAmount         Decimal                   @default(0) @db.Decimal(18, 2)
+  status             GSTReconciliationLineStatus
+  bookDocumentId     String?
+  mismatchDetails    Json?
+  createdAt          DateTime                  @default(now())
+  company            Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  upload             GSTReconciliationUpload   @relation(fields: [companyId, uploadId], references: [companyId, id], onDelete: Cascade)
+  bookDocument       PurchaseDocument?         @relation(fields: [companyId, bookDocumentId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, uploadId, rowNumber])
+  @@index([companyId, status, createdAt])
+  @@index([companyId, invoiceNumber])
+  @@index([companyId, bookDocumentId])
+}
+
+model GSTAdjustment {
+  id              String           @id @default(cuid())
+  companyId       String
+  actorId         String
+  voucherId       String
+  periodKey       String
+  adjustmentType  GSTAdjustmentType
+  side            GSTAdjustmentSide
+  noteNumber      String
+  noteDate        DateTime         @db.Date
+  counterpartyGstin String?
+  taxableAmount  Decimal          @db.Decimal(18, 2)
+  cgstAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  sgstAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  utgstAmount    Decimal          @default(0) @db.Decimal(18, 2)
+  igstAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  cessAmount     Decimal          @default(0) @db.Decimal(18, 2)
+  reason         String
+  idempotencyKey String
+  requestHash    String
+  createdAt      DateTime         @default(now())
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actor          User             @relation("GSTAdjustmentActor", fields: [actorId], references: [id], onDelete: Restrict)
+  voucher        AccountingVoucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@unique([companyId, noteNumber])
+  @@unique([companyId, voucherId])
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, periodKey, side, adjustmentType])
+  @@index([companyId, noteDate])
 }
 
 model FinancialYear {
@@ -510,6 +705,7 @@ model AccountingVoucher {
   billWiseEntries      BillWiseEntry[]
   costAllocations      CostAllocation[]
   attachments          VoucherAttachment[]
+  gstAdjustments       GSTAdjustment[]
   approvals            VoucherApprovalAction[]
   auditEvents          VoucherAuditEvent[]
   dayBookEntries       DayBookEntry[]
@@ -827,6 +1023,7 @@ model SalesDocument {
   sgstAmount           Decimal              @default(0) @db.Decimal(18, 2)
   utgstAmount          Decimal              @default(0) @db.Decimal(18, 2)
   igstAmount           Decimal              @default(0) @db.Decimal(18, 2)
+  cessAmount           Decimal              @default(0) @db.Decimal(18, 2)
   roundOff             Decimal              @default(0) @db.Decimal(18, 2)
   totalAmount          Decimal              @db.Decimal(18, 2)
   costOfGoodsSold      Decimal              @default(0) @db.Decimal(18, 2)
@@ -893,6 +1090,10 @@ model SalesDocumentLine {
   sgstAmount        Decimal             @default(0) @db.Decimal(18, 2)
   utgstAmount       Decimal             @default(0) @db.Decimal(18, 2)
   igstAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  cessRate          Decimal             @default(0) @db.Decimal(7, 4)
+  cessAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  isTaxInclusive    Boolean             @default(false)
+  reverseCharge     Boolean             @default(false)
   warehouseId       String?
   batchNumber       String?
   manufacturingDate DateTime?           @db.Date
@@ -910,6 +1111,7 @@ model SalesDocumentLine {
   @@index([companyId, itemId, documentId])
   @@index([companyId, sourceLineId])
   @@index([companyId, warehouseId, batchNumber])
+  @@index([companyId, reverseCharge])
 }
 
 model SalesDocumentEvent {
@@ -979,6 +1181,7 @@ model PurchaseDocument {
   sgstAmount            Decimal                 @default(0) @db.Decimal(18, 2)
   utgstAmount           Decimal                 @default(0) @db.Decimal(18, 2)
   igstAmount            Decimal                 @default(0) @db.Decimal(18, 2)
+  cessAmount            Decimal                 @default(0) @db.Decimal(18, 2)
   roundOff              Decimal                 @default(0) @db.Decimal(18, 2)
   totalAmount           Decimal                 @db.Decimal(18, 2)
   idempotencyKey        String
@@ -1005,6 +1208,7 @@ model PurchaseDocument {
   issuedBy              User?                   @relation("PurchaseDocumentIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
   lines                 PurchaseDocumentLine[]
   events                PurchaseDocumentEvent[]
+  gstReconciliationLines GSTReconciliationLine[]
 
   @@unique([companyId, id])
   @@unique([companyId, documentNumber])
@@ -1046,6 +1250,10 @@ model PurchaseDocumentLine {
   sgstAmount        Decimal                @default(0) @db.Decimal(18, 2)
   utgstAmount       Decimal                @default(0) @db.Decimal(18, 2)
   igstAmount        Decimal                @default(0) @db.Decimal(18, 2)
+  cessRate          Decimal                @default(0) @db.Decimal(7, 4)
+  cessAmount        Decimal                @default(0) @db.Decimal(18, 2)
+  isTaxInclusive    Boolean                @default(false)
+  reverseCharge     Boolean                @default(false)
   warehouseId       String?
   batchNumber       String?
   manufacturingDate DateTime?              @db.Date
@@ -1065,6 +1273,7 @@ model PurchaseDocumentLine {
   @@index([companyId, sourceLineId])
   @@index([companyId, warehouseId, batchNumber])
   @@index([companyId, costCentreId])
+  @@index([companyId, reverseCharge])
 }
 
 model PurchaseDocumentEvent {

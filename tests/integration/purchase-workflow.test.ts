@@ -82,6 +82,38 @@ databaseTest("credit purchase invoice posting creates GST, supplier bill and bal
     expect(voucher.lines.flatMap((line) => line.taxDetails)).toHaveLength(2);
     expect(taxTransactions).toHaveLength(2);
     expect(voucher.lines.flatMap((line) => line.transactions)).toHaveLength(voucher.lines.length);
+
+    const rcmInput = purchaseDocumentCreateSchema.parse({
+      documentType: "PURCHASE_INVOICE",
+      partyId: supplier.id,
+      documentDate: "2026-04-02",
+      supplierInvoiceNumber: `GST-RCM-${suffix}`,
+      supplierInvoiceDate: "2026-04-03",
+      lines: [{
+        description: "Tax-inclusive reverse charge service",
+        unit: "JOB",
+        quantity: "1",
+        unitRate: "130",
+        gstRate: "18",
+        cessRate: "12",
+        isTaxInclusive: true,
+        reverseCharge: true,
+      }],
+    });
+    const rcmDraft = await createPurchaseDraft(context, rcmInput, `purchase-rcm-draft-${suffix}`, {});
+    expect(rcmDraft.document.taxableAmount.toString()).toBe("100");
+    expect(rcmDraft.document.totalAmount.toString()).toBe("100");
+    const rcmPosted = await postPurchaseDocument(context, rcmDraft.document.id, { paymentMode: "CREDIT" }, `purchase-rcm-post-${suffix}`, {});
+    if (!rcmPosted.voucher) throw new Error("Posted reverse-charge invoice did not return its voucher");
+    const rcmTaxTransactions = await prisma.taxTransaction.findMany({
+      where: { companyId: company.id, voucherId: rcmPosted.voucher.id },
+    });
+    expect(rcmTaxTransactions).toHaveLength(6);
+    expect(rcmTaxTransactions.every((transaction) =>
+      transaction.transactionDate.toISOString().slice(0, 10) === "2026-04-03",
+    )).toBe(true);
+    expect(rcmTaxTransactions.filter((transaction) => transaction.ledgerId).map((transaction) => transaction.taxType))
+      .toEqual(expect.arrayContaining(["CGST", "SGST", "CESS"]));
   } finally {
     await prisma.$transaction(async (tx) => {
       await tx.purchaseDocumentEvent.deleteMany({ where: { companyId: company.id } });

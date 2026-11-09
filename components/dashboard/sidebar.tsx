@@ -30,6 +30,7 @@ const managementLinks: {
   { href: "/dashboard/vouchers", permission: "vouchers:read", english: "Vouchers", hindi: "वाउचर", Icon: ReceiptText },
   { href: "/dashboard/day-book", permission: "vouchers:read", english: "Day Book", hindi: "डे बुक", Icon: History },
   { href: "/dashboard/tax-transactions", permission: "vouchers:read", english: "Tax transactions", hindi: "कर लेनदेन", Icon: FileBarChart2 },
+  { href: "/dashboard/gst", permission: "company:read", english: "GST compliance", hindi: "GST अनुपालन", Icon: FileBarChart2 },
   { href: "/dashboard/voucher-series", permission: "voucher-series:manage", english: "Voucher number series", hindi: "वाउचर नंबर श्रृंखला", Icon: ReceiptText },
   { href: "/dashboard/cost-centres", permission: "vouchers:read", english: "Cost centres", hindi: "लागत केंद्र", Icon: Layers3 },
   { href: "/dashboard/inventory", permission: "inventory:read", english: "Stock items", hindi: "स्टॉक आइटम", Icon: Boxes },

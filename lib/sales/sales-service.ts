@@ -5,6 +5,8 @@ import { createPostedVoucherWithinTransaction, reversePostedVoucher } from "@/li
 import { ensureDefaultChart } from "@/lib/accounting/default-chart";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hashIdempotencyKey } from "@/lib/idempotency";
+import { calculateGST, isUnionTerritoryGSTState } from "@/lib/gst/engine";
+import { assertGSTPeriodOpen } from "@/lib/gst/period";
 import { postInventoryMovement } from "@/lib/inventory/post-movement";
 import { withTransaction } from "@/lib/transactions";
 import type { salesDocumentCreateSchema, salesConvertSchema } from "@/lib/validation/sales";
@@ -27,6 +29,9 @@ type SalesLine = {
   manufacturingDate?: string | undefined;
   expiryDate?: string | undefined;
   gstRate?: string | undefined;
+  cessRate?: string | undefined;
+  isTaxInclusive?: boolean | undefined;
+  reverseCharge?: boolean | undefined;
 };
 
 const decimal = (value: string | number) => new Prisma.Decimal(value);
@@ -112,10 +117,6 @@ function taxesForLine(
   };
 }
 
-function isUnionTerritory(code: string | null) {
-  return ["04", "26", "31", "34", "35", "38"].includes(code ?? "");
-}
-
 export function calculateGstAmounts(
   taxableAmount: string,
   gstRate: string,
@@ -126,7 +127,7 @@ export function calculateGstAmounts(
     decimal(taxableAmount),
     decimal(gstRate),
     Boolean(companyStateCode && companyStateCode === partyStateCode),
-    isUnionTerritory(companyStateCode),
+    isUnionTerritoryGSTState(companyStateCode),
   );
   return {
     cgst: tax.cgst.toFixed(2),
@@ -145,7 +146,7 @@ async function resolveLines(
 ) {
   const result = [];
   const intraState = Boolean(company.stateCode && company.stateCode === party.stateCode);
-  const ut = isUnionTerritory(company.stateCode);
+  const ut = isUnionTerritoryGSTState(company.stateCode);
   for (const [index, line] of lines.entries()) {
     let item: {
       id: string; name: string; hsnSac: string | null; gstRate: Prisma.Decimal;
@@ -164,9 +165,21 @@ async function resolveLines(
     const gross = cents(quantity.mul(rate));
     const discountPercent = decimal(line.discountPercent ?? "0");
     const discountAmount = cents(gross.mul(discountPercent).div(100));
-    const taxable = gross.minus(discountAmount);
-    if (taxable.lessThanOrEqualTo(0)) throw new ValidationError("Each sales line must have a positive taxable amount");
     const gstRate = line.gstRate !== undefined ? decimal(line.gstRate) : item?.gstRate ?? decimal(0);
+    const cessRate = decimal(line.cessRate ?? "0");
+    const taxCalculation = calculateGST({
+      unitRate: line.unitRate,
+      quantity: line.quantity,
+      discountPercent: line.discountPercent ?? "0",
+      gstRate: gstRate.toString(),
+      cessRate: cessRate.toString(),
+      isTaxInclusive: line.isTaxInclusive ?? false,
+      reverseCharge: line.reverseCharge ?? false,
+      companyStateCode: company.stateCode ?? "",
+      placeOfSupplyStateCode: party.stateCode ?? "",
+    });
+    const taxable = decimal(taxCalculation.taxableAmount);
+    if (taxable.lessThanOrEqualTo(0)) throw new ValidationError("Each sales line must have a positive taxable amount");
     const tax = taxesForLine(taxable, gstRate, intraState, ut);
     if (item?.batchTracked && !line.batchNumber) {
       throw new ValidationError(`A batch number is required for ${item.name}`);
@@ -198,6 +211,10 @@ async function resolveLines(
       sgstAmount: tax.sgst,
       utgstAmount: tax.utgst,
       igstAmount: tax.igst,
+      cessRate,
+      cessAmount: decimal(taxCalculation.cessAmount),
+      isTaxInclusive: line.isTaxInclusive ?? false,
+      reverseCharge: line.reverseCharge ?? false,
       warehouseId: line.warehouseId ?? null,
       batchNumber: line.batchNumber || null,
       manufacturingDate: line.manufacturingDate ? date(line.manufacturingDate) : null,
@@ -295,14 +312,16 @@ export async function createSalesDraft(
     const subtotal = lines.reduce((sum, line) => sum.plus(line.quantity.mul(line.unitRate)), decimal(0));
     const discountAmount = lines.reduce((sum, line) => sum.plus(line.discountAmount), decimal(0));
     const taxableAmount = lines.reduce((sum, line) => sum.plus(line.taxableAmount), decimal(0));
-    const cgst = lines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0));
-    const sgst = lines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0));
-    const utgst = lines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0));
-    const igst = lines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0));
+    const taxableLines = lines.filter((line) => !line.reverseCharge);
+    const cgst = taxableLines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0));
+    const sgst = taxableLines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0));
+    const utgst = taxableLines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0));
+    const igst = taxableLines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0));
+    const cess = taxableLines.reduce((sum, line) => sum.plus(line.cessAmount), decimal(0));
     const freight = decimal(input.freight);
     const otherCharges = decimal(input.otherCharges);
     const roundOff = decimal(input.roundOff);
-    const totalAmount = cents(taxableAmount.plus(cgst).plus(sgst).plus(utgst).plus(igst).plus(freight).plus(otherCharges).plus(roundOff));
+    const totalAmount = cents(taxableAmount.plus(cgst).plus(sgst).plus(utgst).plus(igst).plus(cess).plus(freight).plus(otherCharges).plus(roundOff));
     if (totalAmount.lessThan(0)) throw new ValidationError("Sales document total cannot be negative");
     const { seriesId, number } = await nextNumber(tx, actor.companyId, input.documentType, documentDate);
     const billingAddress = input.billingAddress ?? {
@@ -343,6 +362,7 @@ export async function createSalesDraft(
         sgstAmount: cents(sgst),
         utgstAmount: cents(utgst),
         igstAmount: cents(igst),
+        cessAmount: cents(cess),
         roundOff,
         totalAmount,
         idempotencyKey: key,
@@ -463,6 +483,9 @@ export async function convertSalesDocument(
         unitRate: sourceLine.unitRate.toString(),
         discountPercent: sourceLine.discountPercent.toString(),
         gstRate: sourceLine.gstRate.toString(),
+        cessRate: sourceLine.cessRate.toString(),
+        isTaxInclusive: sourceLine.isTaxInclusive,
+        reverseCharge: sourceLine.reverseCharge,
         warehouseId: requested.warehouseId,
         batchNumber: requested.batchNumber,
       });
@@ -473,10 +496,12 @@ export async function convertSalesDocument(
     const subtotal = lines.reduce((sum, line) => sum.plus(line.quantity.mul(line.unitRate)), decimal(0));
     const discountAmount = lines.reduce((sum, line) => sum.plus(line.discountAmount), decimal(0));
     const taxableAmount = lines.reduce((sum, line) => sum.plus(line.taxableAmount), decimal(0));
-    const cgst = lines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0));
-    const sgst = lines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0));
-    const utgst = lines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0));
-    const igst = lines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0));
+    const taxableLines = lines.filter((line) => !line.reverseCharge);
+    const cgst = taxableLines.reduce((sum, line) => sum.plus(line.cgstAmount), decimal(0));
+    const sgst = taxableLines.reduce((sum, line) => sum.plus(line.sgstAmount), decimal(0));
+    const utgst = taxableLines.reduce((sum, line) => sum.plus(line.utgstAmount), decimal(0));
+    const igst = taxableLines.reduce((sum, line) => sum.plus(line.igstAmount), decimal(0));
+    const cess = taxableLines.reduce((sum, line) => sum.plus(line.cessAmount), decimal(0));
     const { seriesId, number } = await nextNumber(tx, actor.companyId, targetType, date(input.documentDate));
     const dueDate = input.dueDate
       ? date(input.dueDate)
@@ -499,8 +524,8 @@ export async function convertSalesDocument(
         notes: source.notes,
         subtotal: cents(subtotal), discountAmount: cents(discountAmount), freight: decimal(0), otherCharges: decimal(0),
         taxableAmount: cents(taxableAmount), cgstAmount: cents(cgst), sgstAmount: cents(sgst),
-        utgstAmount: cents(utgst), igstAmount: cents(igst), roundOff: decimal(0),
-        totalAmount: cents(taxableAmount.plus(cgst).plus(sgst).plus(utgst).plus(igst)),
+        utgstAmount: cents(utgst), igstAmount: cents(igst), cessAmount: cents(cess), roundOff: decimal(0),
+        totalAmount: cents(taxableAmount.plus(cgst).plus(sgst).plus(utgst).plus(igst).plus(cess)),
         idempotencyKey: key, requestHash: bodyHash, createdById: actor.userId,
         lines: { create: lines },
       },
@@ -531,6 +556,7 @@ async function ensureSalesAccounts(tx: Prisma.TransactionClient, companyId: stri
     { code: "OUTPUT_SGST", name: "Output SGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const },
     { code: "OUTPUT_UTGST", name: "Output UTGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const },
     { code: "OUTPUT_IGST", name: "Output IGST", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const },
+    { code: "OUTPUT_CESS", name: "Output Cess", groupId: chart.groups.get("DUTIES_TAXES")!, type: "TAX" as const },
   ];
   const ids = new Map<string, string>();
   for (const account of accounts) {
@@ -575,6 +601,7 @@ export async function postSalesInvoice(
       },
     });
     if (!document) throw new NotFoundError("Draft sales invoice not found in the current company");
+    await assertGSTPeriodOpen(tx, actor.companyId, document.documentDate);
     if (document.sourceDocument) {
       const sourceStatus = document.sourceDocument.status;
       if (["CANCELLED", "REVERSED", "REJECTED", "DRAFT"].includes(sourceStatus) ||
@@ -686,6 +713,7 @@ export async function postSalesInvoice(
       ["SGST", "OUTPUT_SGST", document.sgstAmount],
       ["UTGST", "OUTPUT_UTGST", document.utgstAmount],
       ["IGST", "OUTPUT_IGST", document.igstAmount],
+      ["CESS", "OUTPUT_CESS", document.cessAmount],
     ] as const;
     for (const [taxType, code, taxAmount] of taxTypes) {
       if (taxAmount.isZero()) continue;
@@ -789,6 +817,7 @@ export async function postSalesInvoice(
     });
     const taxDetailRows = [];
     for (const line of document.lines) {
+      if (line.reverseCharge) continue;
       const revenueLine = voucherLines.find((entry) =>
         entry.ledgerId === accounts.accounts.get("SALES_REVENUE") &&
         entry.description === `Sales revenue · ${document.documentNumber} · ${line.lineNumber}`,
@@ -799,6 +828,7 @@ export async function postSalesInvoice(
         ["SGST", line.sgstAmount, line.sgstRate, accounts.accounts.get("OUTPUT_SGST")!],
         ["UTGST", line.utgstAmount, line.utgstRate, accounts.accounts.get("OUTPUT_UTGST")!],
         ["IGST", line.igstAmount, line.igstRate, accounts.accounts.get("OUTPUT_IGST")!],
+        ["CESS", line.cessAmount, line.cessRate, accounts.accounts.get("OUTPUT_CESS")!],
       ] as const;
       for (const [type, taxAmount, rate, taxLedgerId] of components) {
         if (taxAmount.isZero()) continue;
@@ -1135,6 +1165,9 @@ export async function cancelSalesDocument(
       include: { lines: true },
     });
     if (!document) throw new NotFoundError("Sales document not found in the current company");
+    if (document.documentType === "SALES_INVOICE") {
+      await assertGSTPeriodOpen(tx, actor.companyId, date(reversalDate));
+    }
     if (["CANCELLED", "REVERSED"].includes(document.status)) {
       throw new ConflictError("This sales document has already been cancelled or reversed");
     }

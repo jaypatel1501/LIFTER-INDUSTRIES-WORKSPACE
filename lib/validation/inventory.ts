@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hsnSacSchema } from "@/lib/gst/engine";
 
 const positiveDecimal = (integerDigits: number, decimalPlaces: number) =>
   z.string().regex(new RegExp(`^\\d{1,${integerDigits}}(?:\\.\\d{1,${decimalPlaces}})?$`))
@@ -29,7 +30,7 @@ export const stockItemCreateSchema = z.object({
   code: z.string().trim().toUpperCase().min(2).max(40).regex(/^[A-Z0-9_-]+$/).optional().or(z.literal("")),
   groupId: z.string().min(1).max(64),
   baseUnitId: z.string().min(1).max(64),
-  hsnSac: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,8}$/).optional().or(z.literal("")),
+  hsnSac: hsnSacSchema.optional().or(z.literal("")),
   gstRate: z.string().regex(/^\d{1,3}(?:\.\d{1,2})?$/).refine((value) => Number(value) <= 100),
   purchaseRate: nonnegativeDecimal(12, 4),
   salesRate: nonnegativeDecimal(12, 4),
@@ -68,7 +69,7 @@ export const stockItemCreateSchema = z.object({
 export const stockItemUpdateSchema = z.object({
   name: z.string().trim().min(2).max(160).optional(),
   groupId: z.string().min(1).max(64).optional(),
-  hsnSac: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,8}$/).nullable().optional(),
+  hsnSac: hsnSacSchema.nullable().optional(),
   gstRate: z.string().regex(/^\d{1,3}(?:\.\d{1,2})?$/).refine((value) => Number(value) <= 100).optional(),
   purchaseRate: nonnegativeDecimal(12, 4).optional(),
   salesRate: nonnegativeDecimal(12, 4).optional(),
